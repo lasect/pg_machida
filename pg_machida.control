@@ -1,0 +1,6 @@
+comment = 'pg_machida:  Created by pgrx'
+default_version = '@CARGO_VERSION@'
+module_pathname = 'pg_machida'
+relocatable = false
+superuser = true
+trusted = false
