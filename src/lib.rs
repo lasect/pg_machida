@@ -1,6 +1,7 @@
 use pgrx::prelude::*;
 
 ::pgrx::pg_module_magic!(name, version);
+::pgrx::extension_sql_file!("../sql/pg_machida--0.1.0.sql", name = "schema", bootstrap);
 
 pub mod types;
 pub mod book;
