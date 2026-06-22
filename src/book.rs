@@ -16,7 +16,7 @@ pub fn tick_to_decimal(tick: usize) -> Decimal {
     Decimal::new(tick as i64, 2)
 }
 
-fn decimal_to_tick_qty(d: Decimal) -> u64 {
+pub fn decimal_to_tick_qty(d: Decimal) -> u64 {
     d.to_u64().unwrap_or(0)
 }
 
@@ -99,6 +99,31 @@ impl PriceLevel {
         PriceLevel {
             orders: VecDeque::new(),
             total_qty: Decimal::ZERO,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.orders.is_empty()
+    }
+
+    pub fn front(&self) -> Option<&Order> {
+        self.orders.front()
+    }
+
+    pub fn front_mut(&mut self) -> Option<&mut Order> {
+        self.orders.front_mut()
+    }
+
+    pub fn pop_front(&mut self) -> Option<Order> {
+        let order = self.orders.pop_front()?;
+        self.total_qty -= order.remaining;
+        Some(order)
+    }
+
+    pub fn reduce_front_remaining(&mut self, amount: Decimal) {
+        self.total_qty -= amount;
+        if let Some(order) = self.orders.front_mut() {
+            order.remaining -= amount;
         }
     }
 
