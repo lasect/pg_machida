@@ -6,3 +6,6 @@ mod test_book;
 
 #[path = "unit/test_matching.rs"]
 mod test_matching;
+
+#[path = "unit/test_engine.rs"]
+mod test_engine;
