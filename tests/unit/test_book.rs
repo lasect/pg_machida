@@ -33,9 +33,9 @@ fn order_with_id(id: Uuid, side: Side, price: Option<Decimal>, qty: Decimal, ts:
     )
 }
 
-// ---------------------------------------------------------------------------
+
 // price_to_tick / tick_to_price round trip
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_price_tick_round_trip() {
@@ -46,9 +46,9 @@ fn test_price_tick_round_trip() {
     }
 }
 
-// ---------------------------------------------------------------------------
+
 // TickArray — basic operations
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_tick_array_add_and_get() {
@@ -110,9 +110,9 @@ fn test_tick_array_update_best_ask_empty() {
     assert_eq!(arr.get_qty(999), 0);
 }
 
-// ---------------------------------------------------------------------------
+
 // OrderBook — insert + cancel round trip
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_insert_and_cancel_round_trip_bid() {
@@ -168,9 +168,9 @@ fn test_insert_and_cancel_round_trip_ask() {
     assert!(book.order_index.is_empty());
 }
 
-// ---------------------------------------------------------------------------
+
 // OrderBook — best_bid / best_ask
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_best_bid_after_insert() {
@@ -239,9 +239,9 @@ fn test_cancel_nonexistent_order() {
     assert!(book.cancel(Uuid::new_v4()).is_none());
 }
 
-// ---------------------------------------------------------------------------
+
 // OrderBook — best_bid/ask after filling top level
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_best_bid_updates_after_top_level_emptied() {
@@ -275,9 +275,9 @@ fn test_best_ask_updates_after_top_level_emptied() {
     assert_eq!(book.best_ask(), None);
 }
 
-// ---------------------------------------------------------------------------
+
 // OrderBook — depth
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_depth_bids() {
@@ -338,9 +338,9 @@ fn test_depth_asks_after_cancel_top_level() {
     assert_eq!(depth_after.len(), 1);
 }
 
-// ---------------------------------------------------------------------------
+
 // OrderBook — multiple orders at same tick (FIFO order in deque)
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_multiple_orders_same_tick_fifo_order() {
@@ -362,9 +362,9 @@ fn test_multiple_orders_same_tick_fifo_order() {
     assert_eq!(level.orders[2].qty, Decimal::new(3, 0));
 }
 
-// ---------------------------------------------------------------------------
+
 // OrderBook — market orders are not inserted
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_market_order_not_inserted() {

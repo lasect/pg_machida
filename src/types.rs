@@ -3,9 +3,7 @@ use std::fmt;
 use std::str::FromStr;
 use uuid::Uuid;
 
-// ---------------------------------------------------------------------------
 // Enums
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
@@ -38,9 +36,7 @@ pub enum STPMode {
     None,
 }
 
-// ---------------------------------------------------------------------------
 // Core structs
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct Order {
@@ -70,6 +66,28 @@ pub struct Trade {
     pub ts: u64,
 }
 
+impl Trade {
+    /// Compute a deterministic, idempotent trade ID from the trade contents.
+    /// Uses UUIDv5 (SHA-1) so re-inserting the same trade is safe with
+    /// `ON CONFLICT DO NOTHING`.
+    pub fn compute_id(
+        instrument_id: u64,
+        buy_order_id: Uuid,
+        sell_order_id: Uuid,
+        price: Decimal,
+        qty: Decimal,
+        fill_seq: u64,
+    ) -> Uuid {
+        let namespace = Uuid::parse_str("e7d8a1b4-3f95-4a2c-8e1d-c6b5f0a9d3e2")
+            .expect("hard-coded namespace must parse");
+        let name = format!(
+            "{}:{}:{}:{}:{}:{}",
+            instrument_id, buy_order_id, sell_order_id, price, qty, fill_seq
+        );
+        Uuid::new_v5(&namespace, name.as_bytes())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PlaceOrderResult {
     pub order_id: Uuid,
@@ -86,9 +104,7 @@ pub struct BookLevel {
     pub order_count: u32,
 }
 
-// ---------------------------------------------------------------------------
 // Extended types
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct IcebergOrder {
@@ -112,9 +128,9 @@ pub struct RiskLimits {
     pub daily_notional_limit: Decimal,
 }
 
-// ---------------------------------------------------------------------------
+
 // PlaceOrderResult helpers
-// ---------------------------------------------------------------------------
+
 
 impl PlaceOrderResult {
     pub fn cancelled(order_id: Uuid) -> Self {
@@ -138,9 +154,9 @@ impl PlaceOrderResult {
     }
 }
 
-// ---------------------------------------------------------------------------
+
 // Order helpers
-// ---------------------------------------------------------------------------
+
 
 impl Order {
     #[allow(clippy::too_many_arguments)]
@@ -171,9 +187,9 @@ impl Order {
     }
 }
 
-// ---------------------------------------------------------------------------
+
 // String conversions — Side
-// ---------------------------------------------------------------------------
+
 
 impl From<Side> for &str {
     fn from(side: Side) -> &'static str {
@@ -202,9 +218,9 @@ impl fmt::Display for Side {
     }
 }
 
-// ---------------------------------------------------------------------------
+
 // String conversions — OrderType
-// ---------------------------------------------------------------------------
+
 
 impl From<OrderType> for &str {
     fn from(ot: OrderType) -> &'static str {
@@ -237,9 +253,9 @@ impl fmt::Display for OrderType {
     }
 }
 
-// ---------------------------------------------------------------------------
+
 // String conversions — OrderStatus
-// ---------------------------------------------------------------------------
+
 
 impl From<OrderStatus> for &str {
     fn from(status: OrderStatus) -> &'static str {
@@ -274,9 +290,9 @@ impl fmt::Display for OrderStatus {
     }
 }
 
-// ---------------------------------------------------------------------------
+
 // String conversions — STPMode
-// ---------------------------------------------------------------------------
+
 
 impl From<STPMode> for &str {
     fn from(mode: STPMode) -> &'static str {
@@ -309,9 +325,9 @@ impl fmt::Display for STPMode {
     }
 }
 
-// ---------------------------------------------------------------------------
+
 // FromStr impls (delegate to TryFrom<&str>)
-// ---------------------------------------------------------------------------
+
 
 impl FromStr for Side {
     type Err = String;

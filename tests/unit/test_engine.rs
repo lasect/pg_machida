@@ -47,9 +47,9 @@ fn make_market_order(id: Uuid, instrument_id: u64, side: Side, qty: Decimal, ts:
     )
 }
 
-// ---------------------------------------------------------------------------
+
 // create_instrument — happy path
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_create_instrument() {
@@ -77,9 +77,9 @@ fn test_create_multiple_instruments_distinct_ids() {
     assert_eq!(engine.instrument_id("ETH-USD"), Some(id2));
 }
 
-// ---------------------------------------------------------------------------
+
 // create_instrument — errors
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_create_instrument_empty_symbol() {
@@ -129,9 +129,9 @@ fn test_create_instrument_zero_max_ticks() {
     assert!(err.to_string().contains("max_ticks"));
 }
 
-// ---------------------------------------------------------------------------
+
 // place_order — happy path
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_place_limit_order_rests_on_book() {
@@ -184,9 +184,9 @@ fn test_place_order_matches_across_two_instruments_independent_books() {
     assert_eq!(engine.best_ask(eth_id), None);
 }
 
-// ---------------------------------------------------------------------------
+
 // place_order — errors
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_place_order_nonexistent_instrument() {
@@ -304,9 +304,9 @@ fn test_market_order_skips_tick_size_validation() {
     assert_eq!(result.filled_qty, dec(3));
 }
 
-// ---------------------------------------------------------------------------
+
 // cancel_order
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_cancel_order_removes_from_engine_index() {
@@ -346,9 +346,9 @@ fn test_cancel_nonexistent_order() {
     assert!(matches!(err, ClobError::OrderNotFound(_)));
 }
 
-// ---------------------------------------------------------------------------
+
 // get_book_depth
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_get_book_depth() {
@@ -396,9 +396,9 @@ fn test_get_book_depth_nonexistent_instrument() {
     assert!(matches!(err, ClobError::InstrumentNotFound(_)));
 }
 
-// ---------------------------------------------------------------------------
+
 // halt / resume
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_halt_and_resume() {
@@ -439,9 +439,9 @@ fn test_resume_nonexistent_instrument() {
     assert!(matches!(err, ClobError::InstrumentNotFound(_)));
 }
 
-// ---------------------------------------------------------------------------
+
 // circuit breaker
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_circuit_breaker_triggers_halt_on_large_move() {
@@ -587,9 +587,9 @@ fn test_circuit_breaker_no_trigger_without_cb_configured() {
     );
 }
 
-// ---------------------------------------------------------------------------
+
 // Two instruments are independent
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_two_instruments_independent_tick_arrays() {
@@ -674,9 +674,9 @@ fn test_halt_one_instrument_does_not_affect_other() {
     assert!(engine.place_order(eth_order).is_ok());
 }
 
-// ---------------------------------------------------------------------------
+
 // Mass cancel — cancel all resting orders via cancel loop
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_cancel_all_orders_clears_book() {

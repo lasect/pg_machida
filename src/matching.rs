@@ -217,6 +217,7 @@ pub fn match_order(book: &mut OrderBook, mut order: Order) -> PlaceOrderResult {
     let mut trades = Vec::new();
     let mut filled_qty = Decimal::ZERO;
     let mut weighted_price_sum = Decimal::ZERO;
+    let mut fill_seq: u64 = 0;
 
     // FOK pre-check: verify full qty available before starting
     if order.order_type == OrderType::FOK {
@@ -351,29 +352,38 @@ pub fn match_order(book: &mut OrderBook, mut order: Order) -> PlaceOrderResult {
 
         let fill_qty = order.remaining.min(resting_qty);
 
+        let buy_id = if matches!(order.side, Side::Buy) {
+            order.id
+        } else {
+            resting_id
+        };
+        let sell_id = if matches!(order.side, Side::Sell) {
+            order.id
+        } else {
+            resting_id
+        };
+        let buy_participant = if matches!(order.side, Side::Buy) {
+            order.participant_id.clone()
+        } else {
+            resting_participant.clone()
+        };
+        let sell_participant = if matches!(order.side, Side::Sell) {
+            order.participant_id.clone()
+        } else {
+            resting_participant
+        };
+
+        let trade_id =
+            Trade::compute_id(order.instrument_id, buy_id, sell_id, best_price, fill_qty, fill_seq);
+        fill_seq += 1;
+
         let trade = Trade {
-            id: Uuid::new_v4(),
+            id: trade_id,
             instrument_id: order.instrument_id,
-            buy_order_id: if matches!(order.side, Side::Buy) {
-                order.id
-            } else {
-                resting_id
-            },
-            sell_order_id: if matches!(order.side, Side::Sell) {
-                order.id
-            } else {
-                resting_id
-            },
-            buy_participant_id: if matches!(order.side, Side::Buy) {
-                order.participant_id.clone()
-            } else {
-                resting_participant.clone()
-            },
-            sell_participant_id: if matches!(order.side, Side::Sell) {
-                order.participant_id.clone()
-            } else {
-                resting_participant
-            },
+            buy_order_id: buy_id,
+            sell_order_id: sell_id,
+            buy_participant_id: buy_participant,
+            sell_participant_id: sell_participant,
             price: best_price,
             qty: fill_qty,
             ts: order.ts,

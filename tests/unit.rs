@@ -9,3 +9,6 @@ mod test_matching;
 
 #[path = "unit/test_engine.rs"]
 mod test_engine;
+
+#[path = "unit/test_persistence.rs"]
+mod test_persistence;

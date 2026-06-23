@@ -20,7 +20,7 @@ pg_bench = ["dep:pgrx-bench"]
 [dependencies]
 pgrx = "=0.18.0"
 rust_decimal = "1"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v5"] }
 
 [dependencies.pgrx-bench]
 version = "=0.18.0"

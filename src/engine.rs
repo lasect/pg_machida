@@ -93,8 +93,75 @@ impl ClobEngine {
 
         Ok(id)
     }
+    pub fn create_instrument_with_id(
+        &mut self,
+        id: u64,
+        symbol: &str,
+        tick_size: Decimal,
+        lot_size: Decimal,
+        max_ticks: usize,
+    ) -> Result<u64, ClobError> {
+        if symbol.is_empty() {
+            return Err(ClobError::InstrumentNotFound(
+                "symbol must not be empty".into(),
+            ));
+        }
+        if self.symbol_map.contains_key(symbol) {
+            return Err(ClobError::InvalidPrice(format!(
+                "symbol '{}' already exists",
+                symbol
+            )));
+        }
+        if self.instruments.contains_key(&id) {
+            return Err(ClobError::InvalidPrice(format!(
+                "instrument id {} already exists",
+                id
+            )));
+        }
+        if tick_size <= Decimal::ZERO {
+            return Err(ClobError::InvalidPrice("tick_size must be > 0".into()));
+        }
+        if lot_size <= Decimal::ZERO {
+            return Err(ClobError::InvalidQty("lot_size must be > 0".into()));
+        }
+        if max_ticks == 0 {
+            return Err(ClobError::InvalidPrice("max_ticks must be > 0".into()));
+        }
+
+        self.next_id = self.next_id.max(id + 1);
+
+        let instrument = Instrument {
+            id,
+            symbol: symbol.to_string(),
+            tick_size,
+            lot_size,
+            status: InstrumentStatus::Active,
+            circuit_breaker: None,
+            book: OrderBook::new(max_ticks),
+        };
+
+        self.instruments.insert(id, instrument);
+        self.symbol_map.insert(symbol.to_string(), id);
+
+        Ok(id)
+    }
+
     pub fn instrument_id(&self, symbol: &str) -> Option<u64> {
         self.symbol_map.get(symbol).copied()
+    }
+
+    /// Load an order directly into the book without running matching.
+    /// Used during crash recovery to rebuild in-memory state from Postgres.
+    pub fn load_order(&mut self, order: Order) -> Result<(), ClobError> {
+        let instr = self
+            .instruments
+            .get_mut(&order.instrument_id)
+            .ok_or_else(|| ClobError::InstrumentNotFound(order.instrument_id.to_string()))?;
+
+        let order_id = order.id;
+        instr.book.insert(order);
+        self.order_instrument.insert(order_id, instr.id);
+        Ok(())
     }
 
     pub fn place_order(&mut self, order: Order) -> Result<PlaceOrderResult, ClobError> {
@@ -254,6 +321,29 @@ impl ClobEngine {
 
     pub fn instrument_count(&self) -> usize {
         self.instruments.len()
+    }
+
+    /// Collect all resting (open / partially filled) orders from every
+    /// instrument, sorted by `ts` ascending — the order they should be
+    /// replayed on rebuild to preserve time priority.
+    pub fn resting_orders(&self) -> Vec<Order> {
+        let mut orders: Vec<Order> = Vec::new();
+
+        for instr in self.instruments.values() {
+            for level in instr.book.bid_levels.values() {
+                for order in &level.orders {
+                    orders.push(order.clone());
+                }
+            }
+            for level in instr.book.ask_levels.values() {
+                for order in &level.orders {
+                    orders.push(order.clone());
+                }
+            }
+        }
+
+        orders.sort_by_key(|o| o.ts);
+        orders
     }
 }
 

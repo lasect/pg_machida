@@ -3,9 +3,9 @@ use rust_decimal::Decimal;
 use std::str::FromStr;
 use uuid::Uuid;
 
-// ---------------------------------------------------------------------------
+
 // Side — string conversions
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn side_from_str_buy() {
@@ -37,9 +37,9 @@ fn side_from_str_invalid() {
     assert!(Side::try_from("foo").is_err());
 }
 
-// ---------------------------------------------------------------------------
+
 // OrderType — string conversions
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn order_type_from_str_all() {
@@ -70,9 +70,9 @@ fn order_type_from_str_invalid() {
     assert!(OrderType::try_from("gtc").is_err());
 }
 
-// ---------------------------------------------------------------------------
+
 // OrderStatus — string conversions
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn order_status_from_str_all() {
@@ -104,9 +104,9 @@ fn order_status_from_str_invalid() {
     assert!(OrderStatus::try_from("unknown").is_err());
 }
 
-// ---------------------------------------------------------------------------
+
 // STPMode — string conversions
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn stp_mode_from_str_all() {
@@ -136,9 +136,9 @@ fn stp_mode_from_str_invalid() {
     assert!(STPMode::try_from("cancel_both").is_err());
 }
 
-// ---------------------------------------------------------------------------
+
 // Order::new() defaults
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn order_new_sets_defaults() {
@@ -158,9 +158,9 @@ fn order_new_sets_defaults() {
     assert_eq!(order.qty, Decimal::new(5, 0));
 }
 
-// ---------------------------------------------------------------------------
+
 // PlaceOrderResult helpers
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn place_order_result_cancelled() {

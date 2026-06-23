@@ -107,9 +107,9 @@ fn dec(val: i64) -> Decimal {
     Decimal::new(val, 0)
 }
 
-// ---------------------------------------------------------------------------
+
 // Simple limit-limit match
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_simple_limit_match_buy_aggresses_sell() {
@@ -159,9 +159,9 @@ fn test_simple_limit_match_sell_aggresses_bid() {
     assert!(book.order_index.is_empty());
 }
 
-// ---------------------------------------------------------------------------
+
 // Partial fill — resting order larger than incoming
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_partial_fill_resting_larger_than_incoming() {
@@ -191,9 +191,9 @@ fn test_partial_fill_resting_larger_than_incoming() {
     assert_eq!(level.orders[0].id, sell_id);
 }
 
-// ---------------------------------------------------------------------------
+
 // Partial fill — incoming order larger than resting
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_partial_fill_incoming_larger_than_resting() {
@@ -227,9 +227,9 @@ fn test_partial_fill_incoming_larger_than_resting() {
     assert_eq!(level.orders[0].id, buy_id);
 }
 
-// ---------------------------------------------------------------------------
+
 // Price-time priority (FIFO within level)
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_price_time_priority_fills_oldest_first() {
@@ -270,9 +270,9 @@ fn test_price_time_priority_fills_oldest_first() {
     assert_eq!(level.orders[0].remaining, dec(3));
 }
 
-// ---------------------------------------------------------------------------
+
 // Market order walks multiple levels
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_market_order_walks_multiple_levels() {
@@ -317,9 +317,9 @@ fn test_market_order_walks_multiple_levels() {
     assert_eq!(level.orders[0].remaining, dec(2));
 }
 
-// ---------------------------------------------------------------------------
+
 // Market sell order walks bids
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_market_sell_walks_bids() {
@@ -349,9 +349,9 @@ fn test_market_sell_walks_bids() {
     assert_eq!(book.bids.get_qty(tick100), 3);
 }
 
-// ---------------------------------------------------------------------------
+
 // Limit order price check — does not cross if price is too low/high
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_limit_buy_price_too_low_does_not_match() {
@@ -404,9 +404,9 @@ fn test_limit_buy_crosses_spread() {
     assert_eq!(result.trades[0].price, dec(100));
 }
 
-// ---------------------------------------------------------------------------
+
 // IOC — immediate-or-cancel, remainder cancelled
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_ioc_matches_then_cancels_remainder() {
@@ -447,9 +447,9 @@ fn test_ioc_no_match_cancels_entirely() {
     assert_eq!(book.best_bid(), None);
 }
 
-// ---------------------------------------------------------------------------
+
 // FOK — fill-or-kill
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_fok_full_fill_succeeds() {
@@ -501,9 +501,9 @@ fn test_fok_empty_book_cancels() {
     assert!(!book.order_index.contains_key(&buy_id));
 }
 
-// ---------------------------------------------------------------------------
+
 // FOK — price constraint: must respect limit price in pre-check
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_fok_limit_price_constraint_buy_insufficient_after_constraint() {
@@ -583,9 +583,9 @@ fn test_fok_sell_limit_price_crosses_all_levels_sufficient() {
     assert_eq!(result.trades.len(), 2);
 }
 
-// ---------------------------------------------------------------------------
+
 // FOK with multiple levels
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_fok_multiple_levels_sufficient_liquidity() {
@@ -631,9 +631,9 @@ fn test_fok_multiple_levels_insufficient_liquidity() {
     assert!(!book.order_index.contains_key(&buy_id));
 }
 
-// ---------------------------------------------------------------------------
+
 // Average fill price calculation
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_average_fill_price_single_level() {
@@ -663,9 +663,9 @@ fn test_average_fill_price_multiple_levels() {
     assert_eq!(result.avg_fill_price, Some(expected_avg));
 }
 
-// ---------------------------------------------------------------------------
+
 // STP — CancelNewest (default: reject incoming)
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_stp_cancel_newest_rejects_incoming() {
@@ -696,9 +696,9 @@ fn test_stp_cancel_newest_rejects_incoming() {
     assert!(!book.order_index.contains_key(&incoming_id));
 }
 
-// ---------------------------------------------------------------------------
+
 // STP — CancelOldest (remove resting, continue matching)
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_stp_cancel_oldest_removes_resting_matches_next() {
@@ -749,9 +749,9 @@ fn test_stp_cancel_oldest_removes_resting_matches_next() {
     assert_eq!(book.bids.get_qty(tick), 2);
 }
 
-// ---------------------------------------------------------------------------
+
 // STP — Decrement
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_stp_decrement_resting_larger_cancels_incoming() {
@@ -821,9 +821,9 @@ fn test_stp_decrement_incoming_larger_continues_matching() {
     assert_eq!(book.bids.get_qty(tick), 2);
 }
 
-// ---------------------------------------------------------------------------
+
 // STP — None (allow self-trade)
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_stp_none_allows_self_trade() {
@@ -853,9 +853,9 @@ fn test_stp_none_allows_self_trade() {
     assert_eq!(book.asks.get_qty(tick), 2);
 }
 
-// ---------------------------------------------------------------------------
+
 // Market order with empty book
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_market_order_empty_book_cancels() {
@@ -871,9 +871,9 @@ fn test_market_order_empty_book_cancels() {
     assert!(!book.order_index.contains_key(&buy_id));
 }
 
-// ---------------------------------------------------------------------------
+
 // Market order exhausts contra side
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_market_order_exhausts_contra_side() {
@@ -895,9 +895,9 @@ fn test_market_order_exhausts_contra_side() {
     assert_eq!(result.status, OrderStatus::PartiallyFilled);
 }
 
-// ---------------------------------------------------------------------------
+
 // Multiple orders at same price level fill in FIFO order
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_multiple_orders_same_price_fifo_fill() {
@@ -939,9 +939,9 @@ fn test_multiple_orders_same_price_fifo_fill() {
     assert_eq!(level.orders[1].remaining, dec(2));
 }
 
-// ---------------------------------------------------------------------------
+
 // Best bid/ask update after fills
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_best_ask_updates_after_level_emptied_by_fills() {
@@ -979,9 +979,9 @@ fn test_best_bid_updates_after_level_emptied_by_fills() {
     assert_eq!(book.best_bid(), None);
 }
 
-// ---------------------------------------------------------------------------
+
 // Trade contains correct buy/sell participant IDs
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_trade_participant_ids() {
@@ -997,9 +997,9 @@ fn test_trade_participant_ids() {
     assert_eq!(result.trades[0].sell_participant_id, "seller_a");
 }
 
-// ---------------------------------------------------------------------------
+
 // Fill-or-kill cross-side
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_fok_sell_side() {
@@ -1033,9 +1033,9 @@ fn test_fok_sell_insufficient_cancels() {
     assert!(!book.order_index.contains_key(&sell_id));
 }
 
-// ---------------------------------------------------------------------------
+
 // Input validation — reject invalid orders
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_reject_zero_quantity() {
@@ -1148,9 +1148,9 @@ fn test_market_order_with_zero_price_accepted() {
     assert_eq!(result.filled_qty, dec(3));
 }
 
-// ---------------------------------------------------------------------------
+
 // Decimal tick/qty round trip
-// ---------------------------------------------------------------------------
+
 
 #[test]
 fn test_decimal_price_tick_conversion() {
