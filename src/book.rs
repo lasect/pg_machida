@@ -9,7 +9,13 @@ use crate::types::{BookLevel, Order, Side};
 
 pub fn price_to_tick(price: Decimal) -> usize {
     let scaled = price * Decimal::new(100, 0);
-    scaled.to_u64().unwrap_or(0) as usize
+    assert!(
+        scaled.fract() == Decimal::ZERO,
+        "price must resolve to a whole tick"
+    );
+    scaled
+        .to_u64()
+        .expect("price out of tick range") as usize
 }
 
 pub fn tick_to_decimal(tick: usize) -> Decimal {
@@ -17,7 +23,12 @@ pub fn tick_to_decimal(tick: usize) -> Decimal {
 }
 
 pub fn decimal_to_tick_qty(d: Decimal) -> u64 {
-    d.to_u64().unwrap_or(0)
+    assert!(
+        d.fract() == Decimal::ZERO,
+        "quantity must be a whole number"
+    );
+    d.to_u64()
+        .expect("quantity out of range for tick array")
 }
 
 pub struct TickArray {
@@ -283,7 +294,7 @@ impl OrderBook {
                             .unwrap_or(0);
                         result.push(BookLevel {
                             price: tick_to_decimal(tick),
-                            qty: Decimal::new(qty as i64, 0),
+                            qty: Decimal::from(qty),
                             order_count,
                         });
                         collected += 1;
@@ -311,7 +322,7 @@ impl OrderBook {
                             .unwrap_or(0);
                         result.push(BookLevel {
                             price: tick_to_decimal(tick),
-                            qty: Decimal::new(qty as i64, 0),
+                            qty: Decimal::from(qty),
                             order_count,
                         });
                         collected += 1;

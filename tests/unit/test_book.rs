@@ -124,7 +124,14 @@ fn test_insert_and_cancel_round_trip_bid() {
 
     let tick = price_to_tick(Decimal::new(99, 0));
     assert!(book.bids.get_qty(tick) > 0);
-    assert_eq!(book.bid_levels.get(&tick).unwrap().orders.len(), 1);
+    assert_eq!(
+        book.bid_levels
+            .get(&tick)
+            .expect("bid level should exist after insert")
+            .orders
+            .len(),
+        1
+    );
     assert_eq!(book.order_index.len(), 1);
 
     let cancelled = book.cancel(id);
@@ -144,7 +151,14 @@ fn test_insert_and_cancel_round_trip_ask() {
 
     let tick = price_to_tick(Decimal::new(101, 0));
     assert!(book.asks.get_qty(tick) > 0);
-    assert_eq!(book.ask_levels.get(&tick).unwrap().orders.len(), 1);
+    assert_eq!(
+        book.ask_levels
+            .get(&tick)
+            .expect("ask level should exist after insert")
+            .orders
+            .len(),
+        1
+    );
     assert_eq!(book.order_index.len(), 1);
 
     let cancelled = book.cancel(id);
@@ -336,7 +350,10 @@ fn test_multiple_orders_same_tick_fifo_order() {
     book.insert(make_order(Side::Buy, Some(Decimal::new(99, 0)), Decimal::new(3, 0)));
 
     let tick = price_to_tick(Decimal::new(99, 0));
-    let level = book.bid_levels.get(&tick).unwrap();
+    let level = book
+        .bid_levels
+        .get(&tick)
+        .expect("bid level should exist for FIFO test");
     assert_eq!(level.orders.len(), 3);
     assert_eq!(level.total_qty, Decimal::new(6, 0));
     // Orders should be in insertion order (FIFO)

@@ -9,15 +9,15 @@ use uuid::Uuid;
 
 #[test]
 fn side_from_str_buy() {
-    assert_eq!(Side::try_from("buy").unwrap(), Side::Buy);
-    assert_eq!(Side::try_from("BUY").unwrap(), Side::Buy);
-    assert_eq!(Side::from_str("buy").unwrap(), Side::Buy);
+    assert_eq!(Side::try_from("buy").expect("valid side"), Side::Buy);
+    assert_eq!(Side::try_from("BUY").expect("valid side"), Side::Buy);
+    assert_eq!(Side::from_str("buy").expect("valid side"), Side::Buy);
 }
 
 #[test]
 fn side_from_str_sell() {
-    assert_eq!(Side::try_from("sell").unwrap(), Side::Sell);
-    assert_eq!(Side::try_from("SELL").unwrap(), Side::Sell);
+    assert_eq!(Side::try_from("sell").expect("valid side"), Side::Sell);
+    assert_eq!(Side::try_from("SELL").expect("valid side"), Side::Sell);
 }
 
 #[test]
@@ -43,12 +43,12 @@ fn side_from_str_invalid() {
 
 #[test]
 fn order_type_from_str_all() {
-    assert_eq!(OrderType::try_from("limit").unwrap(), OrderType::Limit);
-    assert_eq!(OrderType::try_from("LIMIT").unwrap(), OrderType::Limit);
-    assert_eq!(OrderType::try_from("market").unwrap(), OrderType::Market);
-    assert_eq!(OrderType::try_from("ioc").unwrap(), OrderType::IOC);
-    assert_eq!(OrderType::try_from("IOC").unwrap(), OrderType::IOC);
-    assert_eq!(OrderType::try_from("fok").unwrap(), OrderType::FOK);
+    assert_eq!(OrderType::try_from("limit").expect("valid order_type"), OrderType::Limit);
+    assert_eq!(OrderType::try_from("LIMIT").expect("valid order_type"), OrderType::Limit);
+    assert_eq!(OrderType::try_from("market").expect("valid order_type"), OrderType::Market);
+    assert_eq!(OrderType::try_from("ioc").expect("valid order_type"), OrderType::IOC);
+    assert_eq!(OrderType::try_from("IOC").expect("valid order_type"), OrderType::IOC);
+    assert_eq!(OrderType::try_from("fok").expect("valid order_type"), OrderType::FOK);
 }
 
 #[test]
@@ -76,12 +76,12 @@ fn order_type_from_str_invalid() {
 
 #[test]
 fn order_status_from_str_all() {
-    assert_eq!(OrderStatus::try_from("open").unwrap(), OrderStatus::Open);
-    assert_eq!(OrderStatus::try_from("OPEN").unwrap(), OrderStatus::Open);
-    assert_eq!(OrderStatus::try_from("partially_filled").unwrap(), OrderStatus::PartiallyFilled);
-    assert_eq!(OrderStatus::try_from("filled").unwrap(), OrderStatus::Filled);
-    assert_eq!(OrderStatus::try_from("cancelled").unwrap(), OrderStatus::Cancelled);
-    assert_eq!(OrderStatus::try_from("rejected").unwrap(), OrderStatus::Rejected);
+    assert_eq!(OrderStatus::try_from("open").expect("valid order_status"), OrderStatus::Open);
+    assert_eq!(OrderStatus::try_from("OPEN").expect("valid order_status"), OrderStatus::Open);
+    assert_eq!(OrderStatus::try_from("partially_filled").expect("valid order_status"), OrderStatus::PartiallyFilled);
+    assert_eq!(OrderStatus::try_from("filled").expect("valid order_status"), OrderStatus::Filled);
+    assert_eq!(OrderStatus::try_from("cancelled").expect("valid order_status"), OrderStatus::Cancelled);
+    assert_eq!(OrderStatus::try_from("rejected").expect("valid order_status"), OrderStatus::Rejected);
 }
 
 #[test]
@@ -110,11 +110,11 @@ fn order_status_from_str_invalid() {
 
 #[test]
 fn stp_mode_from_str_all() {
-    assert_eq!(STPMode::try_from("cancel_newest").unwrap(), STPMode::CancelNewest);
-    assert_eq!(STPMode::try_from("CANCEL_NEWEST").unwrap(), STPMode::CancelNewest);
-    assert_eq!(STPMode::try_from("cancel_oldest").unwrap(), STPMode::CancelOldest);
-    assert_eq!(STPMode::try_from("decrement").unwrap(), STPMode::Decrement);
-    assert_eq!(STPMode::try_from("none").unwrap(), STPMode::None);
+    assert_eq!(STPMode::try_from("cancel_newest").expect("valid stp_mode"), STPMode::CancelNewest);
+    assert_eq!(STPMode::try_from("CANCEL_NEWEST").expect("valid stp_mode"), STPMode::CancelNewest);
+    assert_eq!(STPMode::try_from("cancel_oldest").expect("valid stp_mode"), STPMode::CancelOldest);
+    assert_eq!(STPMode::try_from("decrement").expect("valid stp_mode"), STPMode::Decrement);
+    assert_eq!(STPMode::try_from("none").expect("valid stp_mode"), STPMode::None);
 }
 
 #[test]

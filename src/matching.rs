@@ -1,8 +1,35 @@
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::book::*;
 use crate::types::*;
+
+fn contra_front_remaining(
+    book: &OrderBook,
+    contra_side: Side,
+    tick: usize,
+) -> Option<Decimal> {
+    let level = match contra_side {
+        Side::Buy => book.bid_levels.get(&tick)?,
+        Side::Sell => book.ask_levels.get(&tick)?,
+    };
+    level.front().map(|o| o.remaining)
+}
+
+fn contra_front_info(
+    book: &OrderBook,
+    contra_side: Side,
+    tick: usize,
+) -> Option<(Decimal, Uuid, String)> {
+    let level = match contra_side {
+        Side::Buy => book.bid_levels.get(&tick)?,
+        Side::Sell => book.ask_levels.get(&tick)?,
+    };
+    level
+        .front()
+        .map(|o| (o.remaining, o.id, o.participant_id.clone()))
+}
 
 fn remove_contra_front(book: &mut OrderBook, contra_side: Side, tick: usize) -> Option<Order> {
     let mut level = match contra_side {
@@ -127,12 +154,19 @@ fn fill_contra_front(
 
 fn can_fill_fully(book: &OrderBook, order: &Order) -> bool {
     let mut needed = order.qty;
+    let limit = order.price;
 
     match order.side {
         Side::Buy => {
             let mut tick = book.asks.get_best_tick();
             let max = book.max_ticks;
             while needed > Decimal::ZERO && tick < max {
+                let price = tick_to_decimal(tick);
+                if let Some(limit_price) = limit {
+                    if price > limit_price {
+                        break;
+                    }
+                }
                 if let Some(level) = book.ask_levels.get(&tick) {
                     needed -= level.total_qty;
                 }
@@ -142,6 +176,12 @@ fn can_fill_fully(book: &OrderBook, order: &Order) -> bool {
         Side::Sell => {
             let mut tick = book.bids.get_best_tick();
             loop {
+                let price = tick_to_decimal(tick);
+                if let Some(limit_price) = limit {
+                    if price < limit_price {
+                        break;
+                    }
+                }
                 if let Some(level) = book.bid_levels.get(&tick) {
                     needed -= level.total_qty;
                 }
@@ -157,6 +197,23 @@ fn can_fill_fully(book: &OrderBook, order: &Order) -> bool {
 }
 
 pub fn match_order(book: &mut OrderBook, mut order: Order) -> PlaceOrderResult {
+    if order.qty <= Decimal::ZERO {
+        return PlaceOrderResult::rejected(order.id);
+    }
+    if let Some(price) = order.price {
+        if price <= Decimal::ZERO {
+            return PlaceOrderResult::rejected(order.id);
+        }
+        let scaled = price * Decimal::new(100, 0);
+        if scaled.fract() != Decimal::ZERO
+            || scaled
+                .to_u64()
+                .map_or(true, |t| t as usize >= book.max_ticks)
+        {
+            return PlaceOrderResult::rejected(order.id);
+        }
+    }
+
     let mut trades = Vec::new();
     let mut filled_qty = Decimal::ZERO;
     let mut weighted_price_sum = Decimal::ZERO;
@@ -251,12 +308,10 @@ pub fn match_order(book: &mut OrderBook, mut order: Order) -> PlaceOrderResult {
                     continue;
                 }
                 STPMode::Decrement => {
-                    let resting_qty = {
-                        let level = match order.side {
-                            Side::Buy => book.ask_levels.get(&best_tick).unwrap(),
-                            Side::Sell => book.bid_levels.get(&best_tick).unwrap(),
-                        };
-                        level.front().unwrap().remaining
+                    let Some(resting_qty) =
+                        contra_front_remaining(book, contra_side, best_tick)
+                    else {
+                        break;
                     };
                     if order.remaining <= resting_qty {
                         // Incoming is fully consumed by STP
@@ -288,13 +343,10 @@ pub fn match_order(book: &mut OrderBook, mut order: Order) -> PlaceOrderResult {
         }
 
         // Read resting order data before the mutable fill operation
-        let (resting_qty, resting_id, resting_participant) = {
-            let level = match order.side {
-                Side::Buy => book.ask_levels.get(&best_tick).unwrap(),
-                Side::Sell => book.bid_levels.get(&best_tick).unwrap(),
-            };
-            let resting = level.front().unwrap();
-            (resting.remaining, resting.id, resting.participant_id.clone())
+        let Some((resting_qty, resting_id, resting_participant)) =
+            contra_front_info(book, contra_side, best_tick)
+        else {
+            break;
         };
 
         let fill_qty = order.remaining.min(resting_qty);

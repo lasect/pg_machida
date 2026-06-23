@@ -181,7 +181,10 @@ fn test_partial_fill_resting_larger_than_incoming() {
     // Resting sell should still have 7 remaining
     let tick = price_to_tick(dec(100));
     assert_eq!(book.asks.get_qty(tick), 7);
-    let level = book.ask_levels.get(&tick).unwrap();
+    let level = book
+        .ask_levels
+        .get(&tick)
+        .expect("ask level should exist at tick");
     assert_eq!(level.total_qty, dec(7));
     assert_eq!(level.orders.len(), 1);
     assert_eq!(level.orders[0].remaining, dec(7));
@@ -215,7 +218,10 @@ fn test_partial_fill_incoming_larger_than_resting() {
     // Remainder (7) of buy should be resting on book
     let bid_tick = price_to_tick(dec(100));
     assert_eq!(book.bids.get_qty(bid_tick), 7);
-    let level = book.bid_levels.get(&bid_tick).unwrap();
+    let level = book
+        .bid_levels
+        .get(&bid_tick)
+        .expect("bid level should exist at tick");
     assert_eq!(level.total_qty, dec(7));
     assert_eq!(level.orders[0].remaining, dec(7));
     assert_eq!(level.orders[0].id, buy_id);
@@ -255,7 +261,10 @@ fn test_price_time_priority_fills_oldest_first() {
     // sell1 fully consumed, sell2 has 3 remaining
     let tick = price_to_tick(dec(100));
     assert_eq!(book.asks.get_qty(tick), 3);
-    let level = book.ask_levels.get(&tick).unwrap();
+    let level = book
+        .ask_levels
+        .get(&tick)
+        .expect("ask level should exist at tick");
     assert_eq!(level.orders.len(), 1);
     assert_eq!(level.orders[0].id, sell2_id);
     assert_eq!(level.orders[0].remaining, dec(3));
@@ -301,7 +310,10 @@ fn test_market_order_walks_multiple_levels() {
     // Level 102: 2 remaining
     let tick102 = price_to_tick(dec(102));
     assert_eq!(book.asks.get_qty(tick102), 2);
-    let level = book.ask_levels.get(&tick102).unwrap();
+    let level = book
+        .ask_levels
+        .get(&tick102)
+        .expect("ask level should exist at tick102");
     assert_eq!(level.orders[0].remaining, dec(2));
 }
 
@@ -487,6 +499,88 @@ fn test_fok_empty_book_cancels() {
     assert_eq!(result.status, OrderStatus::Cancelled);
     assert_eq!(result.filled_qty, dec(0));
     assert!(!book.order_index.contains_key(&buy_id));
+}
+
+// ---------------------------------------------------------------------------
+// FOK — price constraint: must respect limit price in pre-check
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_fok_limit_price_constraint_buy_insufficient_after_constraint() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    // Asks at 100, 101 (both cross limit 101), and 105 (does not cross limit 101)
+    book.insert(make_limit_order(Side::Sell, dec(100), dec(3), 1));
+    book.insert(make_limit_order(Side::Sell, dec(101), dec(3), 2));
+    book.insert(make_limit_order(Side::Sell, dec(105), dec(10), 3));
+
+    // FOK buy at limit 101 — only 100 and 101 cross (total 6), need 10 → cancel
+    let buy = make_fok_order(Side::Buy, dec(101), dec(10), 4);
+    let buy_id = buy.id;
+    let result = match_order(&mut book, buy);
+
+    assert_eq!(result.status, OrderStatus::Cancelled);
+    assert_eq!(result.filled_qty, dec(0));
+    assert_eq!(result.trades.len(), 0);
+
+    // Book unchanged
+    let tick100 = price_to_tick(dec(100));
+    assert_eq!(book.asks.get_qty(tick100), 3);
+    let tick101 = price_to_tick(dec(101));
+    assert_eq!(book.asks.get_qty(tick101), 3);
+    let tick105 = price_to_tick(dec(105));
+    assert_eq!(book.asks.get_qty(tick105), 10);
+    assert!(!book.order_index.contains_key(&buy_id));
+}
+
+#[test]
+fn test_fok_limit_price_constraint_sell_insufficient_after_constraint() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    // Bids at 105, 103 (both cross limit 103), and 99 (does not cross limit 103)
+    book.insert(make_limit_order(Side::Buy, dec(105), dec(3), 1));
+    book.insert(make_limit_order(Side::Buy, dec(103), dec(3), 2));
+    book.insert(make_limit_order(Side::Buy, dec(99), dec(10), 3));
+
+    // FOK sell at limit 103 — only 105 and 103 cross (total 6), need 10 → cancel
+    let sell = make_fok_order(Side::Sell, dec(103), dec(10), 4);
+    let sell_id = sell.id;
+    let result = match_order(&mut book, sell);
+
+    assert_eq!(result.status, OrderStatus::Cancelled);
+    assert_eq!(result.filled_qty, dec(0));
+    assert_eq!(result.trades.len(), 0);
+
+    // Book unchanged
+    assert!(!book.order_index.contains_key(&sell_id));
+}
+
+#[test]
+fn test_fok_buy_limit_price_crosses_all_levels_sufficient() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    book.insert(make_limit_order(Side::Sell, dec(100), dec(3), 1));
+    book.insert(make_limit_order(Side::Sell, dec(101), dec(3), 2));
+
+    // FOK buy at limit 101 — both levels cross, total 6 >= 5 → should fill
+    let buy = make_fok_order(Side::Buy, dec(101), dec(5), 3);
+    let result = match_order(&mut book, buy);
+
+    assert_eq!(result.status, OrderStatus::Filled);
+    assert_eq!(result.filled_qty, dec(5));
+    assert_eq!(result.trades.len(), 2);
+}
+
+#[test]
+fn test_fok_sell_limit_price_crosses_all_levels_sufficient() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    book.insert(make_limit_order(Side::Buy, dec(102), dec(3), 1));
+    book.insert(make_limit_order(Side::Buy, dec(101), dec(3), 2));
+
+    // FOK sell at limit 101 — both levels cross, total 6 >= 5 → should fill
+    let sell = make_fok_order(Side::Sell, dec(101), dec(5), 3);
+    let result = match_order(&mut book, sell);
+
+    assert_eq!(result.status, OrderStatus::Filled);
+    assert_eq!(result.filled_qty, dec(5));
+    assert_eq!(result.trades.len(), 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -834,7 +928,10 @@ fn test_multiple_orders_same_price_fifo_fill() {
 
     // o2 should have 2 remaining, o3 should have 2 remaining
     let tick = price_to_tick(dec(100));
-    let level = book.ask_levels.get(&tick).unwrap();
+    let level = book
+        .ask_levels
+        .get(&tick)
+        .expect("ask level should exist at tick");
     assert_eq!(level.orders.len(), 2);
     assert_eq!(level.orders[0].id, o2_id);
     assert_eq!(level.orders[0].remaining, dec(2));
@@ -934,6 +1031,121 @@ fn test_fok_sell_insufficient_cancels() {
     let tick = price_to_tick(dec(100));
     assert_eq!(book.bids.get_qty(tick), 3);
     assert!(!book.order_index.contains_key(&sell_id));
+}
+
+// ---------------------------------------------------------------------------
+// Input validation — reject invalid orders
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_reject_zero_quantity() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    let order = make_limit_order(Side::Buy, dec(100), dec(0), 1);
+    let order_id = order.id;
+    let result = match_order(&mut book, order);
+
+    assert_eq!(result.status, OrderStatus::Rejected);
+    assert_eq!(result.filled_qty, dec(0));
+    assert_eq!(result.trades.len(), 0);
+    assert!(!book.order_index.contains_key(&order_id));
+}
+
+#[test]
+fn test_reject_negative_quantity() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    let id = Uuid::new_v4();
+    let order = Order::new(
+        id,
+        1,
+        "trader_a".into(),
+        Side::Buy,
+        OrderType::Limit,
+        Some(dec(100)),
+        Decimal::new(-1, 0),
+        1,
+        STPMode::None,
+    );
+    let result = match_order(&mut book, order);
+
+    assert_eq!(result.status, OrderStatus::Rejected);
+    assert_eq!(result.filled_qty, dec(0));
+    assert!(!book.order_index.contains_key(&id));
+}
+
+#[test]
+fn test_reject_zero_price_limit_order() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    let order = make_limit_order(Side::Buy, dec(0), dec(5), 1);
+    let order_id = order.id;
+    let result = match_order(&mut book, order);
+
+    assert_eq!(result.status, OrderStatus::Rejected);
+    assert_eq!(result.filled_qty, dec(0));
+    assert!(!book.order_index.contains_key(&order_id));
+}
+
+#[test]
+fn test_reject_negative_price_limit_order() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    let id = Uuid::new_v4();
+    let order = Order::new(
+        id,
+        1,
+        "trader_a".into(),
+        Side::Buy,
+        OrderType::Limit,
+        Some(Decimal::new(-100, 0)),
+        dec(5),
+        1,
+        STPMode::None,
+    );
+    let result = match_order(&mut book, order);
+
+    assert_eq!(result.status, OrderStatus::Rejected);
+    assert_eq!(result.filled_qty, dec(0));
+    assert!(!book.order_index.contains_key(&id));
+}
+
+#[test]
+fn test_reject_price_exceeding_max_ticks() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    // price = TEST_MAX_TICKS * 0.01 = 500.00, which produces tick == TEST_MAX_TICKS
+    // which is >= max_ticks, so it should be rejected
+    let max_price = Decimal::new(TEST_MAX_TICKS as i64, 2); // = 500.00
+    let order = make_limit_order(Side::Buy, max_price, dec(5), 1);
+    let order_id = order.id;
+    let result = match_order(&mut book, order);
+
+    assert_eq!(result.status, OrderStatus::Rejected);
+    assert_eq!(result.filled_qty, dec(0));
+    assert!(!book.order_index.contains_key(&order_id));
+}
+
+#[test]
+fn test_accept_max_tick_price() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    // price just under the max tick boundary
+    let max_price = Decimal::new((TEST_MAX_TICKS - 1) as i64, 2);
+    let order = make_limit_order(Side::Buy, max_price, dec(5), 1);
+    let order_id = order.id;
+    let result = match_order(&mut book, order);
+
+    // No contra liquidity, so should rest on book (Open), NOT be rejected
+    assert_eq!(result.status, OrderStatus::Open);
+    assert!(book.order_index.contains_key(&order_id));
+}
+
+#[test]
+fn test_market_order_with_zero_price_accepted() {
+    let mut book = OrderBook::new(TEST_MAX_TICKS);
+    book.insert(make_limit_order(Side::Sell, dec(100), dec(5), 1));
+
+    let buy = make_market_order(Side::Buy, dec(3), 2);
+    let result = match_order(&mut book, buy);
+
+    // Market orders have no price, so validation should allow them
+    assert_eq!(result.status, OrderStatus::Filled);
+    assert_eq!(result.filled_qty, dec(3));
 }
 
 // ---------------------------------------------------------------------------
