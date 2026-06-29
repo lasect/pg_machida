@@ -256,6 +256,71 @@ impl ClobEngine {
         Ok(cancelled_order)
     }
 
+    pub fn mass_cancel(
+        &mut self,
+        instrument_id: u64,
+        participant_id: &str,
+    ) -> Result<u32, ClobError> {
+        let instr = self
+            .instruments
+            .get_mut(&instrument_id)
+            .ok_or_else(|| ClobError::InstrumentNotFound(instrument_id.to_string()))?;
+
+        let mut to_cancel = Vec::new();
+
+        for (order_id, (_side, _tick)) in &instr.book.order_index {
+            let is_match = instr
+                .book
+                .bid_levels
+                .values()
+                .flat_map(|l| l.orders.iter())
+                .chain(instr.book.ask_levels.values().flat_map(|l| l.orders.iter()))
+                .any(|o| o.id == *order_id && o.participant_id == participant_id);
+            if is_match {
+                to_cancel.push(*order_id);
+            }
+        }
+
+        let count = to_cancel.len() as u32;
+        for id in to_cancel {
+            instr.book.cancel(id);
+            self.order_instrument.remove(&id);
+        }
+
+        Ok(count)
+    }
+
+    pub fn get_open_orders(
+        &self,
+        instrument_id: u64,
+        participant_id: &str,
+    ) -> Result<Vec<Order>, ClobError> {
+        let instr = self
+            .instruments
+            .get(&instrument_id)
+            .ok_or_else(|| ClobError::InstrumentNotFound(instrument_id.to_string()))?;
+
+        let orders: Vec<Order> = instr
+            .book
+            .bid_levels
+            .values()
+            .flat_map(|l| l.orders.iter())
+            .chain(instr.book.ask_levels.values().flat_map(|l| l.orders.iter()))
+            .filter(|o| o.participant_id == participant_id)
+            .cloned()
+            .collect();
+
+        Ok(orders)
+    }
+
+    pub fn get_instrument_id(&self, symbol: &str) -> Option<u64> {
+        self.instrument_id(symbol)
+    }
+
+    pub fn iter_instruments(&self) -> impl Iterator<Item = (&u64, &Instrument)> {
+        self.instruments.iter()
+    }
+
     pub fn get_book_depth(
         &self,
         instrument_id: u64,
@@ -321,6 +386,14 @@ impl ClobEngine {
 
     pub fn instrument_count(&self) -> usize {
         self.instruments.len()
+    }
+
+    pub fn all_instrument_ids(&self) -> Vec<u64> {
+        self.instruments.keys().copied().collect()
+    }
+
+    pub fn instrument_symbol(&self, instrument_id: u64) -> Option<&str> {
+        self.instruments.get(&instrument_id).map(|i| i.symbol.as_str())
     }
 
     /// Collect all resting (open / partially filled) orders from every
