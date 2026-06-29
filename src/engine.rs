@@ -71,6 +71,11 @@ impl ClobEngine {
         if lot_size <= Decimal::ZERO {
             return Err(ClobError::InvalidQty("lot_size must be > 0".into()));
         }
+        if lot_size.fract() != Decimal::ZERO {
+            return Err(ClobError::InvalidQty(
+                "lot_size must be a whole number".into(),
+            ));
+        }
         if max_ticks == 0 {
             return Err(ClobError::InvalidPrice("max_ticks must be > 0".into()));
         }
@@ -123,6 +128,11 @@ impl ClobEngine {
         }
         if lot_size <= Decimal::ZERO {
             return Err(ClobError::InvalidQty("lot_size must be > 0".into()));
+        }
+        if lot_size.fract() != Decimal::ZERO {
+            return Err(ClobError::InvalidQty(
+                "lot_size must be a whole number".into(),
+            ));
         }
         if max_ticks == 0 {
             return Err(ClobError::InvalidPrice("max_ticks must be > 0".into()));
@@ -393,7 +403,9 @@ impl ClobEngine {
     }
 
     pub fn instrument_symbol(&self, instrument_id: u64) -> Option<&str> {
-        self.instruments.get(&instrument_id).map(|i| i.symbol.as_str())
+        self.instruments
+            .get(&instrument_id)
+            .map(|i| i.symbol.as_str())
     }
 
     /// Collect all resting (open / partially filled) orders from every

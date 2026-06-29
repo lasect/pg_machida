@@ -121,6 +121,15 @@ fn test_create_instrument_zero_lot_size() {
 }
 
 #[test]
+fn test_create_instrument_fractional_lot_size() {
+    let mut engine = ClobEngine::new();
+    let err = engine
+        .create_instrument("BTC-USD", dec_f(1, 2), dec_f(5, 1), 50000)
+        .unwrap_err();
+    assert!(err.to_string().contains("whole number"));
+}
+
+#[test]
 fn test_create_instrument_zero_max_ticks() {
     let mut engine = ClobEngine::new();
     let err = engine
