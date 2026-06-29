@@ -161,7 +161,7 @@ fn clob_place_order(
             trade.price,
             trade.qty,
         ))
-        .unwrap_or_else(|e| pgrx::warning!("failed to insert trade: {e}"));
+        .unwrap_or_else(|e| pgrx::error!("failed to insert trade: {e}"));
     }
 
     TableIterator::new(vec![(

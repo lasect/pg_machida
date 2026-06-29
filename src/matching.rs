@@ -158,9 +158,9 @@ fn can_fill_fully(book: &OrderBook, order: &Order) -> bool {
 
     match order.side {
         Side::Buy => {
-            let mut tick = book.asks.get_best_tick();
-            let max = book.max_ticks;
-            while needed > Decimal::ZERO && tick < max {
+            let mut ticks: Vec<usize> = book.ask_levels.keys().copied().collect();
+            ticks.sort_unstable();
+            for tick in ticks {
                 let price = tick_to_decimal(tick);
                 if let Some(limit_price) = limit {
                     if price > limit_price {
@@ -169,13 +169,16 @@ fn can_fill_fully(book: &OrderBook, order: &Order) -> bool {
                 }
                 if let Some(level) = book.ask_levels.get(&tick) {
                     needed -= level.total_qty;
+                    if needed <= Decimal::ZERO {
+                        return true;
+                    }
                 }
-                tick += 1;
             }
         }
         Side::Sell => {
-            let mut tick = book.bids.get_best_tick();
-            loop {
+            let mut ticks: Vec<usize> = book.bid_levels.keys().copied().collect();
+            ticks.sort_unstable_by(|a, b| b.cmp(a));
+            for tick in ticks {
                 let price = tick_to_decimal(tick);
                 if let Some(limit_price) = limit {
                     if price < limit_price {
@@ -184,11 +187,10 @@ fn can_fill_fully(book: &OrderBook, order: &Order) -> bool {
                 }
                 if let Some(level) = book.bid_levels.get(&tick) {
                     needed -= level.total_qty;
+                    if needed <= Decimal::ZERO {
+                        return true;
+                    }
                 }
-                if tick == 0 || needed <= Decimal::ZERO {
-                    break;
-                }
-                tick -= 1;
             }
         }
     }

@@ -278,14 +278,16 @@ impl ClobEngine {
 
         let mut to_cancel = Vec::new();
 
-        for (order_id, (_side, _tick)) in &instr.book.order_index {
-            let is_match = instr
-                .book
-                .bid_levels
-                .values()
-                .flat_map(|l| l.orders.iter())
-                .chain(instr.book.ask_levels.values().flat_map(|l| l.orders.iter()))
-                .any(|o| o.id == *order_id && o.participant_id == participant_id);
+        for (order_id, (side, tick)) in &instr.book.order_index {
+            let level = match side {
+                Side::Buy => instr.book.bid_levels.get(tick),
+                Side::Sell => instr.book.ask_levels.get(tick),
+            };
+            let is_match = level.map_or(false, |l| {
+                l.orders
+                    .iter()
+                    .any(|o| o.id == *order_id && o.participant_id == participant_id)
+            });
             if is_match {
                 to_cancel.push(*order_id);
             }
@@ -370,6 +372,16 @@ impl ClobEngine {
         instrument_id: u64,
         cb: CircuitBreaker,
     ) -> Result<(), ClobError> {
+        if cb.halt_pct <= Decimal::ZERO {
+            return Err(ClobError::InvalidPrice(
+                "halt_pct must be > 0".into(),
+            ));
+        }
+        if cb.reference_price <= Decimal::ZERO {
+            return Err(ClobError::InvalidPrice(
+                "reference_price must be > 0".into(),
+            ));
+        }
         let instr = self
             .instruments
             .get_mut(&instrument_id)
