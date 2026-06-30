@@ -64,16 +64,17 @@ fn clob_create_instrument(
     .unwrap_or_else(|e| pgrx::error!("{e}"))
     .unwrap_or_else(|| pgrx::error!("failed to insert instrument"));
 
-    let mut engine = crate::state::get_engine().lock().expect("engine lock poisoned");
-    engine
-        .create_instrument_with_id(
+    let result = {
+        let mut engine = crate::state::lock_engine();
+        engine.create_instrument_with_id(
             id as u64,
             symbol,
             tick_size_dec,
             lot_size_dec,
             max_ticks as usize,
         )
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    };
+    result.unwrap_or_else(|e| pgrx::error!("{e}"));
 
     id
 }
@@ -114,37 +115,37 @@ fn clob_place_order(
     let price_dec = price.map(f64_to_decimal);
     let qty_dec = f64_to_decimal(qty);
 
-    let mut engine = crate::state::get_engine().lock().expect("engine lock poisoned");
+    let (instr_id_opt, engine_result) = {
+        let mut engine = crate::state::lock_engine();
+        let id = engine.instrument_id(instrument);
+        let result = id.map(|i| {
+            let order = Order::new(
+                Uuid::new_v4(),
+                i,
+                participant.to_string(),
+                side,
+                order_type,
+                price_dec,
+                qty_dec,
+                now_nanos(),
+                stp_mode,
+            );
+            engine.place_order(order)
+        });
+        (id, result)
+    };
 
-    let instr_id = engine
-        .instrument_id(instrument)
+    let _instr_id = instr_id_opt
         .unwrap_or_else(|| pgrx::error!("instrument not found: {}", instrument));
-
-    let order = Order::new(
-        Uuid::new_v4(),
-        instr_id,
-        participant.to_string(),
-        side,
-        order_type,
-        price_dec,
-        qty_dec,
-        now_nanos(),
-        stp_mode,
-    );
-
-    let result = engine
-        .place_order(order)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let result = engine_result.expect("instrument_id was Some so engine_result must be Some");
+    let result = result.unwrap_or_else(|e| pgrx::error!("{e}"));
 
     let order_id_str = result.order_id.to_string();
     let status_str: &str = result.status.into();
-    let filled_qty_f64 = result
-        .filled_qty
+    let filled_qty_f64 = result.filled_qty
         .to_f64()
         .unwrap_or_else(|| pgrx::error!("failed to convert filled_qty to f64"));
     let avg_price_f64 = result.avg_fill_price.and_then(|d| d.to_f64());
-
-    drop(engine);
 
     for trade in &result.trades {
         Spi::run(&format!(
@@ -181,9 +182,12 @@ fn clob_cancel_order(order_id: &str) -> bool {
     let id =
         Uuid::parse_str(order_id).unwrap_or_else(|e| pgrx::error!("invalid UUID: {e}"));
 
-    let mut engine = crate::state::get_engine().lock().expect("engine lock poisoned");
+    let result = {
+        let mut engine = crate::state::lock_engine();
+        engine.cancel_order(id)
+    };
 
-    match engine.cancel_order(id) {
+    match result {
         Ok(_) => true,
         Err(e) => {
             pgrx::warning!("cancel failed: {e}");
@@ -209,15 +213,16 @@ fn clob_get_book(
         name!(order_count, i32),
     ),
 > {
-    let engine = state::get_engine().lock().expect("engine lock poisoned");
+    let (instr_id_opt, book_depth_result) = {
+        let engine = state::lock_engine();
+        let id = engine.instrument_id(instrument);
+        let depth = id.map(|i| engine.get_book_depth(i, depth as usize));
+        (id, depth)
+    };
 
-    let instr_id = engine
-        .instrument_id(instrument)
-        .unwrap_or_else(|| pgrx::error!("instrument not found: {}", instrument));
-
-    let book_depth = engine
-        .get_book_depth(instr_id, depth as usize)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let _instr_id = instr_id_opt.unwrap_or_else(|| pgrx::error!("instrument not found: {}", instrument));
+    let book_depth = book_depth_result.expect("instrument_id was Some so book_depth must be Some");
+    let book_depth = book_depth.unwrap_or_else(|e| pgrx::error!("{e}"));
 
     let mut rows = Vec::new();
 
@@ -263,28 +268,38 @@ fn clob_get_open_orders(
         name!(status, String),
     ),
 > {
-    let engine = state::get_engine().lock().expect("engine lock poisoned");
+    let mut rows: Vec<(
+        String,
+        i64,
+        String,
+        String,
+        Option<f64>,
+        f64,
+        f64,
+        String,
+    )> = Vec::new();
 
-    let instr_id = instrument.and_then(|sym| engine.instrument_id(sym));
+    {
+        let engine = state::lock_engine();
 
-    let mut rows = Vec::new();
+        let instr_id = instrument.and_then(|sym| engine.instrument_id(sym));
 
-    match instr_id {
-        Some(id) => {
-            let orders = engine
-                .get_open_orders(id, participant)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-
-            for o in &orders {
-                rows.push(order_to_row(o, id));
+        match instr_id {
+            Some(id) => {
+                let orders = engine.get_open_orders(id, participant);
+                drop(engine);
+                let orders = orders.unwrap_or_else(|e| pgrx::error!("{e}"));
+                for o in &orders {
+                    rows.push(order_to_row(o, id));
+                }
             }
-        }
-        None => {
-            let all_ids: Vec<u64> = engine.all_instrument_ids();
-            for id in all_ids {
-                if let Ok(orders) = engine.get_open_orders(id, participant) {
-                    for o in &orders {
-                        rows.push(order_to_row(o, id));
+            None => {
+                let all_ids: Vec<u64> = engine.all_instrument_ids();
+                for id in all_ids {
+                    if let Ok(orders) = engine.get_open_orders(id, participant) {
+                        for o in &orders {
+                            rows.push(order_to_row(o, id));
+                        }
                     }
                 }
             }
@@ -328,17 +343,17 @@ fn order_to_row(
 
 #[pg_extern]
 fn clob_mass_cancel(participant: &str, instrument: &str) -> i32 {
-    let mut engine = crate::state::get_engine().lock().expect("engine lock poisoned");
+    let (instr_id_opt, count_result) = {
+        let mut engine = crate::state::lock_engine();
+        let id = engine.instrument_id(instrument);
+        let result = id.map(|i| engine.mass_cancel(i, participant));
+        (id, result)
+    };
 
-    let instr_id = engine
-        .instrument_id(instrument)
+    let _instr_id = instr_id_opt
         .unwrap_or_else(|| pgrx::error!("instrument not found: {}", instrument));
-
-    let count = engine
-        .mass_cancel(instr_id, participant)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
-
-    count as i32
+    let count = count_result.expect("instrument_id was Some so count_result must be Some");
+    count.unwrap_or_else(|e| pgrx::error!("{e}")) as i32
 }
 
 // ---------------------------------------------------------------------------
@@ -347,15 +362,17 @@ fn clob_mass_cancel(participant: &str, instrument: &str) -> i32 {
 
 #[pg_extern]
 fn clob_halt_instrument(instrument: &str) {
-    let mut engine = crate::state::get_engine().lock().expect("engine lock poisoned");
-
-    let instr_id = engine
-        .instrument_id(instrument)
-        .unwrap_or_else(|| pgrx::error!("instrument not found: {}", instrument));
-
-    engine
-        .halt_instrument(instr_id)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let instr_id = match {
+        let mut engine = crate::state::lock_engine();
+        engine.instrument_id(instrument).map(|id| {
+            let r = engine.halt_instrument(id);
+            (id, r)
+        })
+    } {
+        Some((id, Ok(()))) => id,
+        Some((_, Err(e))) => pgrx::error!("{e}"),
+        None => pgrx::error!("instrument not found: {}", instrument),
+    };
 
     Spi::run(&format!(
         "UPDATE clob.instruments SET status = 'halted' WHERE id = {}",
@@ -366,15 +383,17 @@ fn clob_halt_instrument(instrument: &str) {
 
 #[pg_extern]
 fn clob_resume_instrument(instrument: &str) {
-    let mut engine = crate::state::get_engine().lock().expect("engine lock poisoned");
-
-    let instr_id = engine
-        .instrument_id(instrument)
-        .unwrap_or_else(|| pgrx::error!("instrument not found: {}", instrument));
-
-    engine
-        .resume_instrument(instr_id)
-        .unwrap_or_else(|e| pgrx::error!("{e}"));
+    let instr_id = match {
+        let mut engine = crate::state::lock_engine();
+        engine.instrument_id(instrument).map(|id| {
+            let r = engine.resume_instrument(id);
+            (id, r)
+        })
+    } {
+        Some((id, Ok(()))) => id,
+        Some((_, Err(e))) => pgrx::error!("{e}"),
+        None => pgrx::error!("instrument not found: {}", instrument),
+    };
 
     Spi::run(&format!(
         "UPDATE clob.instruments SET status = 'active' WHERE id = {}",
@@ -389,18 +408,16 @@ fn clob_resume_instrument(instrument: &str) {
 
 #[pg_extern]
 fn clob_snapshot_book(instrument: &str) {
-    let (instr_id, depths) = {
-        let engine = state::get_engine().lock().expect("engine lock poisoned");
-
-        let instr_id = engine
-            .instrument_id(instrument)
-            .unwrap_or_else(|| pgrx::error!("instrument not found: {}", instrument));
-
-        let depth = engine
-            .get_book_depth(instr_id, 500)
-            .unwrap_or_else(|e| pgrx::error!("{e}"));
-
-        (instr_id, depth)
+    let (instr_id, depths) = match {
+        let engine = state::lock_engine();
+        engine.instrument_id(instrument).map(|id| {
+            let d = engine.get_book_depth(id, 500);
+            (id, d)
+        })
+    } {
+        Some((id, Ok(depth))) => (id, depth),
+        Some((_, Err(e))) => pgrx::error!("{e}"),
+        None => pgrx::error!("instrument not found: {}", instrument),
     };
 
     for bid in &depths.bids {
