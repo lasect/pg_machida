@@ -92,42 +92,40 @@ const LIQUIDITY: Record<string, LiquidityLevels> = {
 
 let engineSeeded = false;
 
+async function isEngineSeeded(): Promise<boolean> {
+  try {
+    const result = await db.execute(
+      sql`SELECT COUNT(*) as count FROM clob.instruments`
+    );
+    const row = result[0] as Record<string, unknown> | undefined;
+    return Number(row?.count ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function ensureEngine() {
   if (engineSeeded) return;
 
-  try {
-    const result = await db.execute(
-      sql`SELECT * FROM clob.get_open_orders('market_maker', null) LIMIT 1`
-    );
-    if (result.length > 0) {
-      engineSeeded = true;
-      return;
-    }
-  } catch (err) {
-    if (engineSeeded) {
-      console.error("ensureEngine: query failed but engine is marked as seeded, skipping re-seed", err);
-      return;
-    }
-    console.error("ensureEngine: engine not initialised, will seed", err);
+  const seeded = await isEngineSeeded();
+  if (seeded) {
+    engineSeeded = true;
+    return;
   }
 
-  // Clear PG tables (they may have stale rows from a previous failed seed)
   await db.execute(sql`TRUNCATE clob.instruments CASCADE`);
   await db.execute(sql`TRUNCATE clob.participants CASCADE`);
 
-  // ── Instruments ─────────────────────────────────────────────
   for (const [sym, tick, lot, max] of INSTRUMENTS) {
     await db.execute(
       sql`SELECT clob.create_instrument(${sym}, ${tick}::numeric, ${lot}::numeric, ${max})`
     );
   }
 
-  // ── Participants ───────────────────────────────────────────
   for (const [id, name] of PARTICIPANTS) {
     await db.execute(sql`SELECT clob.create_participant(${id}, ${name})`);
   }
 
-  // ── Liquidity (resting limit orders) ───────────────────────
   for (const [instrument, levels] of Object.entries(LIQUIDITY)) {
     for (const [price, qty] of levels.bids) {
       await db.execute(
@@ -140,4 +138,6 @@ export async function ensureEngine() {
       );
     }
   }
+
+  engineSeeded = true;
 }
