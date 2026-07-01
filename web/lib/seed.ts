@@ -90,15 +90,25 @@ const LIQUIDITY: Record<string, LiquidityLevels> = {
   },
 };
 
+let engineSeeded = false;
+
 export async function ensureEngine() {
-  // Check if engine already has liquidity seeded
+  if (engineSeeded) return;
+
   try {
     const result = await db.execute(
       sql`SELECT * FROM clob.get_open_orders('market_maker', null) LIMIT 1`
     );
-    if (result.length > 0) return;
-  } catch {
-    // engine is empty, need to seed
+    if (result.length > 0) {
+      engineSeeded = true;
+      return;
+    }
+  } catch (err) {
+    if (engineSeeded) {
+      console.error("ensureEngine: query failed but engine is marked as seeded, skipping re-seed", err);
+      return;
+    }
+    console.error("ensureEngine: engine not initialised, will seed", err);
   }
 
   // Clear PG tables (they may have stale rows from a previous failed seed)
