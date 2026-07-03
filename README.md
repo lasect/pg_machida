@@ -16,11 +16,11 @@ pg_machida is a PostgreSQL extension (written in Rust with [pgrx](https://github
 - **Circuit breakers** — halt an instrument when a trade breaches a threshold
 - **Mass cancel** — cancel all orders for a participant on an instrument
 - **Instrument halt/resume**
-- **Idempotent trade IDs** (UUIDv5) for safe crash recovery
-- **Book persistence** — rebuild in-memory state from Postgres tables on startup
-- **~116 tests** across unit and integration suites
+- **Idempotent trade IDs** (UUIDv5) for duplicate-safe trade inserts
+- **Rebuild helpers** for restoring in-memory books from persisted fixtures/rows
+- **100+ tests** across unit and pgrx SQL suites
 
-Comes with a **Next.js 15 trading UI** (`web/`) for placing orders, viewing the order book, trade tape, and open orders in the browser.
+Comes with a **Next.js 16 trading UI** (`web/`) for placing orders, viewing the order book, trade tape, and open orders in the browser.
 
 ---
 
@@ -38,7 +38,7 @@ Comes with a **Next.js 15 trading UI** (`web/`) for placing orders, viewing the 
   │  │  book.rs     — tick array + FIFO queues   │  │
   │  │  matching.rs — core matching loop         │  │
   │  │  types.rs    — Order, Trade, Side, etc.   │  │
-  │  │  persistence.rs — rebuild from DB tables  │  │
+  │  │  persistence.rs — rebuild helpers         │  │
   │  └──────────────────────────────────────────┘  │
   │                                                 │
   │  ┌──────────────────────────────────────────┐  │
@@ -49,24 +49,23 @@ Comes with a **Next.js 15 trading UI** (`web/`) for placing orders, viewing the 
   └────────────────────────────────────────────────┘
                         │ SQL via postgres.js
   ┌─────────────────────▼─────────────────────────┐
-  │  Next.js 15 Web App (web/)                    │
+  │  Next.js 16 Web App (web/)                    │
   │  app/api/*    — REST API routes               │
   │  lib/queries.ts — SQL calls to clob.*         │
   │  components/* — OrderBook, TradeTape, etc.    │
   └───────────────────────────────────────────────┘
 ```
 
-The engine is stored as a static singleton (`OnceLock<Mutex<ClobEngine>>`), shared across all PostgreSQL backends. The order book uses a hybrid design: a flat tick array for O(1) aggregate quantity per level, plus per-level `VecDeque<Order>` queues for FIFO order identity and O(1) cancellation by ID.
+The engine is stored as a process-local static singleton (`OnceLock<Mutex<ClobEngine>>`) inside the extension. PostgreSQL uses separate backend processes, so true cross-backend shared state is future work and is tracked below under shared memory (DSM). The order book uses a hybrid design: a flat tick array for aggregate quantity per level, plus per-level `VecDeque<Order>` queues for FIFO order identity and cancellation by ID.
 
 ### Project layout
 
 | Directory | |
 |---|---|
-| `src/` | Rust extension — `lib.rs` (SQL bindings), `engine.rs`, `book.rs`, `matching.rs`, `persistence.rs`, `types.rs`, plus background worker and notify modules |
+| `src/` | Rust extension — `lib.rs` (SQL bindings), `engine.rs`, `book.rs`, `matching.rs`, `persistence.rs`, `types.rs` |
 | `sql/` | SQL migration files defining the `clob` schema tables |
 | `tests/` | Unit tests (`unit/`) per module + integration tests (`integration/test_sql.rs`) |
 | `web/` | Next.js 16 App Router UI — components for order book, trade tape, open orders; API routes under `app/api/`; `lib/queries.ts` for SQL calls |
-| `pg_machida.md` | Design doc and roadmap |
 
 ---
 
@@ -76,29 +75,32 @@ All functions live in the `clob` schema:
 
 | Function | Description |
 |----------|-------------|
-| `clob.create_instrument(symbol, name, tick_size, lot_size, price_precision, qty_precision)` | Register a new trading instrument |
-| `clob.create_participant(name, participant_id)` | Register a trader |
-| `clob.place_order(participant_id, symbol, side, order_type, price, qty, stp, instrument_id)` | Place an order (returns trades and order status) |
-| `clob.cancel_order(participant_id, symbol, order_id)` | Cancel a resting order |
-| `clob.get_book(symbol, depth)` | Get the current order book |
-| `clob.get_trades(symbol, limit)` | Get recent trades |
-| `clob.get_open_orders(participant_id, symbol)` | Get open orders for a participant |
-| `clob.mass_cancel(participant_id, symbol)` | Cancel all orders for a participant on an instrument |
-| `clob.halt_instrument(symbol)` / `clob.resume_instrument(symbol)` | Halt/resume trading |
-| `clob.snapshot_book(symbol)` | Persist current book state to `clob.book_snapshots` |
+| `clob.create_instrument(symbol, tick_size, lot_size, max_ticks)` | Register a new trading instrument |
+| `clob.create_participant(participant_id, display_name)` | Register or update a trader |
+| `clob.place_order(instrument, side, order_type, participant, qty, price, stp_mode)` | Place an order |
+| `clob.cancel_order(order_id)` | Cancel a resting order |
+| `clob.get_book(instrument, depth)` | Get the current in-memory order book |
+| `clob.get_trades(instrument, limit)` | Get recent persisted trades |
+| `clob.get_open_orders(participant, instrument)` | Get open orders for a participant |
+| `clob.mass_cancel(participant, instrument)` | Cancel all orders for a participant on an instrument |
+| `clob.halt_instrument(instrument)` / `clob.resume_instrument(instrument)` | Halt/resume trading |
+| `clob.snapshot_book(instrument)` | Persist current book depth to `clob.book_snapshots` |
 
 ### Example
 
 ```sql
-SELECT * FROM clob.create_instrument('BTC-USD', 'Bitcoin', 0.01, 1, 2, 8);
-SELECT * FROM clob.create_participant('alice', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+SELECT clob.create_instrument('BTC-USD', 0.01, 1, 10000000);
+SELECT clob.create_participant('alice', 'Alice');
 
 -- Alice places a limit buy for 1.0 BTC at $60,000
 SELECT * FROM clob.place_order(
-    'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'BTC-USD',
-    'Buy', 'Limit', 60000, 1.0,
-    'None',
-    (SELECT id FROM clob.instruments WHERE symbol = 'BTC-USD')
+    'BTC-USD',
+    'buy',
+    'limit',
+    'alice',
+    1.0,
+    60000,
+    'cancel_newest'
 );
 
 -- Check the book
@@ -146,9 +148,8 @@ CREATE EXTENSION pg_machida;
 
 ```bash
 cd web
-cp .env.local.example .env.local  # or set DATABASE_URL
 pnpm install
-pnpm run dev
+DATABASE_URL=postgres://USER@localhost:28816/pg_machida_dev pnpm run dev
 # Open http://localhost:3000
 ```
 
@@ -174,7 +175,15 @@ cargo pgrx test pg16
 
 ## Project Status
 
-The core matching engine is fully implemented and extensively tested. Remaining work (tracked in `pg_machida.md`):
+The core matching engine is implemented and covered by unit and pgrx SQL tests. The current extension keeps order-book state in memory per PostgreSQL backend process; production-grade shared state, startup recovery, and streaming are still roadmap items.
+
+Current limitations:
+
+- Resting orders are not yet persisted to `clob.orders` by the SQL entrypoint.
+- Automatic startup rebuild from Postgres tables is not wired into the extension yet.
+- Price indexing currently uses cent ticks internally, so configurable tick sizes need more hardening.
+
+Roadmap:
 
 - [ ] Background worker for async trade persistence
 - [ ] Shared memory (DSM) for true multi-backend concurrency
