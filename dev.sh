@@ -16,4 +16,4 @@ cargo pgrx start pg16 2>/dev/null || true
 # 3. Start the Next.js dev server
 echo "[3/3] Starting Next.js on http://localhost:3000"
 cd web
-pnpm run dev
+bun run dev
