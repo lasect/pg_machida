@@ -179,8 +179,8 @@ The core matching engine is implemented and covered by unit and pgrx SQL tests. 
 
 Current limitations:
 
-- Resting orders are not yet persisted to `clob.orders` by the SQL entrypoint.
-- Automatic startup rebuild from Postgres tables is not wired into the extension yet.
+- Normal order placement, fills, cancels, and mass cancels are persisted to `clob.orders`, but automatic startup rebuild from those rows is not wired into the extension yet.
+- STP modes that remove/decrement resting orders need richer engine events before their database state can be fully persisted.
 - Price indexing currently uses cent ticks internally, so configurable tick sizes need more hardening.
 
 Roadmap:

@@ -95,10 +95,16 @@ let engineSeeded = false;
 async function isEngineSeeded(): Promise<boolean> {
   try {
     const result = await db.execute(
-      sql`SELECT COUNT(*) as count FROM clob.instruments`
+      sql`SELECT symbol FROM clob.instruments ORDER BY symbol LIMIT 1`
     );
     const row = result[0] as Record<string, unknown> | undefined;
-    return Number(row?.count ?? 0) > 0;
+
+    if (!row?.symbol) {
+      return false;
+    }
+
+    await db.execute(sql`SELECT * FROM clob.get_book(${row.symbol}, 1)`);
+    return true;
   } catch {
     return false;
   }

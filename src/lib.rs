@@ -37,6 +37,66 @@ fn text_sql(text: &str) -> String {
     format!("'{}'", escaped)
 }
 
+fn nullable_decimal_sql(value: Option<Decimal>) -> String {
+    value
+        .map(|d| format!("{}::numeric", d))
+        .unwrap_or_else(|| "NULL".to_string())
+}
+
+fn persist_order(
+    order_id: Uuid,
+    instrument_id: u64,
+    participant: &str,
+    side: Side,
+    order_type: OrderType,
+    price: Option<Decimal>,
+    qty: Decimal,
+    remaining: Decimal,
+    status: OrderStatus,
+    stp_mode: STPMode,
+) {
+    let side_str: &str = side.into();
+    let order_type_str: &str = order_type.into();
+    let status_str: &str = status.into();
+    let stp_mode_str: &str = stp_mode.into();
+
+    Spi::run(&format!(
+        "INSERT INTO clob.orders \
+         (id, instrument_id, participant_id, side, order_type, price, qty, remaining, status, stp_mode) \
+         VALUES ({}::uuid, {}, {}, {}, {}, {}, {}::numeric, {}::numeric, {}, {}) \
+         ON CONFLICT (id) DO UPDATE SET \
+         remaining = EXCLUDED.remaining, status = EXCLUDED.status, updated_at = now()",
+        text_sql(&order_id.to_string()),
+        instrument_id,
+        text_sql(participant),
+        text_sql(side_str),
+        text_sql(order_type_str),
+        nullable_decimal_sql(price),
+        qty,
+        remaining,
+        text_sql(status_str),
+        text_sql(stp_mode_str),
+    ))
+    .unwrap_or_else(|e| pgrx::error!("failed to persist order: {e}"));
+}
+
+fn decrement_persisted_order(order_id: Uuid, fill_qty: Decimal) {
+    Spi::run(&format!(
+        "UPDATE clob.orders \
+         SET remaining = GREATEST(remaining - {}::numeric, 0::numeric), \
+             status = CASE \
+                 WHEN GREATEST(remaining - {}::numeric, 0::numeric) = 0::numeric THEN 'filled' \
+                 ELSE 'partially_filled' \
+             END, \
+             updated_at = now() \
+         WHERE id = {}::uuid",
+        fill_qty,
+        fill_qty,
+        text_sql(&order_id.to_string()),
+    ))
+    .unwrap_or_else(|e| pgrx::error!("failed to update filled order: {e}"));
+}
+
 // ---------------------------------------------------------------------------
 // create_instrument
 // ---------------------------------------------------------------------------
@@ -135,13 +195,43 @@ fn clob_place_order(
         (id, result)
     };
 
-    let _instr_id = instr_id_opt
+    let instr_id = instr_id_opt
         .unwrap_or_else(|| pgrx::error!("instrument not found: {}", instrument));
     let result = engine_result.expect("instrument_id was Some so engine_result must be Some");
     let result = result.unwrap_or_else(|e| pgrx::error!("{e}"));
 
     let order_id_str = result.order_id.to_string();
     let status_str: &str = result.status.into();
+    let persisted_remaining = if matches!(order_type, OrderType::Limit)
+        && matches!(result.status, OrderStatus::Open | OrderStatus::PartiallyFilled)
+    {
+        qty_dec - result.filled_qty
+    } else {
+        Decimal::ZERO
+    };
+
+    persist_order(
+        result.order_id,
+        instr_id,
+        participant,
+        side,
+        order_type,
+        price_dec,
+        qty_dec,
+        persisted_remaining,
+        result.status,
+        stp_mode,
+    );
+
+    for trade in &result.trades {
+        if trade.buy_order_id != result.order_id {
+            decrement_persisted_order(trade.buy_order_id, trade.qty);
+        }
+        if trade.sell_order_id != result.order_id {
+            decrement_persisted_order(trade.sell_order_id, trade.qty);
+        }
+    }
+
     let filled_qty_f64 = result.filled_qty
         .to_f64()
         .unwrap_or_else(|| pgrx::error!("failed to convert filled_qty to f64"));
@@ -188,7 +278,16 @@ fn clob_cancel_order(order_id: &str) -> bool {
     };
 
     match result {
-        Ok(_) => true,
+        Ok(cancelled) => {
+            Spi::run(&format!(
+                "UPDATE clob.orders \
+                 SET remaining = 0::numeric, status = 'cancelled', updated_at = now() \
+                 WHERE id = {}::uuid",
+                text_sql(&cancelled.id.to_string()),
+            ))
+            .unwrap_or_else(|e| pgrx::error!("failed to persist cancellation: {e}"));
+            true
+        }
         Err(e) => {
             pgrx::warning!("cancel failed: {e}");
             false
@@ -350,10 +449,23 @@ fn clob_mass_cancel(participant: &str, instrument: &str) -> i32 {
         (id, result)
     };
 
-    let _instr_id = instr_id_opt
+    let instr_id = instr_id_opt
         .unwrap_or_else(|| pgrx::error!("instrument not found: {}", instrument));
     let count = count_result.expect("instrument_id was Some so count_result must be Some");
-    count.unwrap_or_else(|e| pgrx::error!("{e}")) as i32
+    let count = count.unwrap_or_else(|e| pgrx::error!("{e}"));
+
+    Spi::run(&format!(
+        "UPDATE clob.orders \
+         SET remaining = 0::numeric, status = 'cancelled', updated_at = now() \
+         WHERE instrument_id = {} \
+           AND participant_id = {} \
+           AND status IN ('open', 'partially_filled')",
+        instr_id,
+        text_sql(participant),
+    ))
+    .unwrap_or_else(|e| pgrx::error!("failed to persist mass cancel: {e}"));
+
+    count as i32
 }
 
 // ---------------------------------------------------------------------------
@@ -569,6 +681,82 @@ mod tests {
 
         let count = crate::clob_mass_cancel("frank", "TEST-MASS");
         assert_eq!(count, 3);
+    }
+
+    #[pg_test]
+    fn test_order_persistence_lifecycle() {
+        crate::clob_create_instrument("TEST-PERSIST", 0.01, 1.0, 100000);
+        Spi::run(
+            "INSERT INTO clob.participants (id, display_name) \
+             VALUES ('persist_seller', 'Persist Seller'), ('persist_buyer', 'Persist Buyer') \
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .unwrap();
+
+        crate::clob_place_order(
+            "TEST-PERSIST",
+            "sell",
+            "limit",
+            5.0,
+            "persist_seller",
+            Some(100.0),
+            Some("cancel_newest"),
+        );
+
+        let open_count: Option<i64> = Spi::get_one(
+            "SELECT COUNT(*) FROM clob.orders \
+             WHERE participant_id = 'persist_seller' \
+               AND status = 'open' \
+               AND remaining = 5::numeric",
+        )
+        .unwrap();
+        assert_eq!(open_count, Some(1));
+
+        crate::clob_place_order(
+            "TEST-PERSIST",
+            "buy",
+            "limit",
+            2.0,
+            "persist_buyer",
+            Some(100.0),
+            Some("cancel_newest"),
+        );
+
+        let partially_filled_count: Option<i64> = Spi::get_one(
+            "SELECT COUNT(*) FROM clob.orders \
+             WHERE participant_id = 'persist_seller' \
+               AND status = 'partially_filled' \
+               AND remaining = 3::numeric",
+        )
+        .unwrap();
+        assert_eq!(partially_filled_count, Some(1));
+
+        let buy_filled_count: Option<i64> = Spi::get_one(
+            "SELECT COUNT(*) FROM clob.orders \
+             WHERE participant_id = 'persist_buyer' \
+               AND status = 'filled' \
+               AND remaining = 0::numeric",
+        )
+        .unwrap();
+        assert_eq!(buy_filled_count, Some(1));
+
+        let order_id: Option<String> = Spi::get_one(
+            "SELECT id::text FROM clob.orders \
+             WHERE participant_id = 'persist_seller'",
+        )
+        .unwrap();
+        let order_id = order_id.expect("persisted order id should exist");
+
+        assert!(crate::clob_cancel_order(&order_id));
+
+        let cancelled_count: Option<i64> = Spi::get_one(
+            "SELECT COUNT(*) FROM clob.orders \
+             WHERE participant_id = 'persist_seller' \
+               AND status = 'cancelled' \
+               AND remaining = 0::numeric",
+        )
+        .unwrap();
+        assert_eq!(cancelled_count, Some(1));
     }
 
     #[pg_test]
