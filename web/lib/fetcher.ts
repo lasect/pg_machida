@@ -2,7 +2,10 @@ export const fetcher = async (url: string) => {
   const res = await fetch(url);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as any).error ?? `HTTP ${res.status}`);
+    const message = body && typeof body === "object" && "error" in body
+      ? String(body.error)
+      : `HTTP ${res.status}`;
+    throw new Error(message);
   }
   return res.json();
 };

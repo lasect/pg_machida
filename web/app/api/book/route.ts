@@ -12,9 +12,10 @@ export async function GET(req: NextRequest) {
   try {
     const result = await getBook(symbol, depth);
     return NextResponse.json([...result]);
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Failed to fetch book";
     return NextResponse.json(
-      { error: e.message ?? "Failed to fetch book" },
+      { error: message },
       { status: 500 }
     );
   }

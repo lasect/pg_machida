@@ -173,6 +173,12 @@ cargo pgrx test pg16
 
 ---
 
+## Deployment
+
+The recommended deployment is a single Oracle VM running PostgreSQL 16, the `pg_machida` extension, and the Next.js web/API app behind Nginx. See [`deploy/README.md`](deploy/README.md) for the production runbook and service templates.
+
+---
+
 ## Project Status
 
 The core matching engine is implemented and covered by unit and pgrx SQL tests. The current extension keeps order-book state in memory per PostgreSQL backend process; production-grade shared state, startup recovery, and streaming are still roadmap items.

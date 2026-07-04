@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   try {
     const result = await getOpenOrders(participant, instrument);
     return NextResponse.json([...result]);
-  } catch (e) {
+  } catch {
     return NextResponse.json(
       { error: "Failed to fetch open orders" },
       { status: 500 }

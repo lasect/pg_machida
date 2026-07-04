@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "./db";
-import { instruments, trades } from "./schema";
+import { instruments } from "./schema";
 import { ensureEngine } from "./seed";
 
 // ── Instruments ───────────────────────────────────────────────

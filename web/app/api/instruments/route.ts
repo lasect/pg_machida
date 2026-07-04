@@ -5,7 +5,7 @@ export async function GET() {
   try {
     const rows = await getInstruments();
     return NextResponse.json(rows);
-  } catch (e) {
+  } catch {
     return NextResponse.json(
       { error: "Failed to fetch instruments" },
       { status: 500 }

@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   try {
     const result = await getTrades(symbol, limit);
     return NextResponse.json([...result]);
-  } catch (e) {
+  } catch {
     return NextResponse.json(
       { error: "Failed to fetch trades" },
       { status: 500 }
