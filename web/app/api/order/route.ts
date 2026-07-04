@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { placeOrder, cancelOrder } from "@/lib/queries";
 
+const MAX_PARTICIPANT_LENGTH = 32;
+const MAX_PRICE = 1_000_000;
+const MAX_QTY = 1_000_000;
+const PARTICIPANT_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unexpected error";
+}
+
+function hasValidDecimalPlaces(value: number) {
+  const text = value.toString();
+  const decimals = text.split(".")[1] ?? "";
+
+  return !text.includes("e") && decimals.length <= 2;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -14,16 +30,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (qty <= 0) {
+    if (
+      typeof participant !== "string" ||
+      participant.length > MAX_PARTICIPANT_LENGTH ||
+      !PARTICIPANT_PATTERN.test(participant)
+    ) {
       return NextResponse.json(
-        { error: "Quantity must be positive" },
+        { error: "Trader ID must be 1-32 letters, numbers, underscores, or dashes" },
         { status: 400 }
       );
     }
 
-    if (orderType === "limit" && (price == null || price <= 0)) {
+    if (!Number.isFinite(qty) || qty <= 0 || qty > MAX_QTY || !hasValidDecimalPlaces(qty)) {
       return NextResponse.json(
-        { error: "Limit orders require a positive price" },
+        { error: `Quantity must be greater than 0, no more than ${MAX_QTY}, and use up to 2 decimals` },
+        { status: 400 }
+      );
+    }
+
+    if (
+      orderType === "limit" &&
+      (price == null ||
+        !Number.isFinite(price) ||
+        price <= 0 ||
+        price > MAX_PRICE ||
+        !hasValidDecimalPlaces(price))
+    ) {
+      return NextResponse.json(
+        { error: `Limit orders require a price greater than 0, no more than ${MAX_PRICE}, and up to 2 decimals` },
         { status: 400 }
       );
     }
@@ -46,8 +80,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(result);
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: getErrorMessage(e) }, { status: 500 });
   }
 }
 
@@ -61,7 +95,7 @@ export async function DELETE(req: NextRequest) {
   try {
     const result = await cancelOrder(id);
     return NextResponse.json({ cancelled: result?.cancel_order ?? false });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: getErrorMessage(e) }, { status: 500 });
   }
 }

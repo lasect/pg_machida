@@ -111,7 +111,7 @@ async function isEngineSeeded(): Promise<boolean> {
 }
 
 export async function ensureEngine() {
-  if (engineSeeded) return;
+  if (engineSeeded && await isEngineSeeded()) return;
 
   const seeded = await isEngineSeeded();
   if (seeded) {

@@ -21,22 +21,22 @@ export default function TradeTape({ symbol }: { symbol: string }) {
     { refreshInterval: 2000 }
   );
 
-  if (!symbol) return null;
+  if (!symbol) return <div className="empty-state px-4 text-sm">Select an instrument to watch prints.</div>;
 
-  if (error) return <div className="text-red-400 text-xs">Failed to load</div>;
-  if (!data) return <div className="text-neutral-500 text-xs">Loading trades...</div>;
-  if (!Array.isArray(data)) return <div className="text-red-400 text-xs">Invalid data</div>;
+  if (error) return <div className="text-xs text-red-300">Failed to load</div>;
+  if (!data) return <div className="empty-state px-4 text-sm">Loading trades...</div>;
+  if (!Array.isArray(data)) return <div className="text-xs text-red-300">Invalid data</div>;
 
   return (
     <div className="font-mono text-xs">
-      <div className="flex justify-between text-neutral-500 mb-1 px-1">
+      <div className="grid grid-cols-3 px-2 pb-2 text-[0.68rem] uppercase tracking-wider text-neutral-600">
         <span>Price</span>
-        <span>Qty</span>
-        <span>Time</span>
+        <span className="text-right">Qty</span>
+        <span className="text-right">Time</span>
       </div>
-      <div className="space-y-px max-h-64 overflow-y-auto">
+      <div className="max-h-[28rem] space-y-px overflow-y-auto">
         {data.length === 0 && (
-          <div className="text-neutral-600 px-1">No trades yet</div>
+          <div className="empty-state px-4 text-sm">No trades yet</div>
         )}
         {data.map((trade) => {
           const numPrice = parseFloat(trade.price);
@@ -48,11 +48,11 @@ export default function TradeTape({ symbol }: { symbol: string }) {
           return (
             <div
               key={trade.id}
-              className="flex justify-between px-1 py-0.5 hover:bg-neutral-800/50"
+              className="grid grid-cols-3 rounded-md px-2 py-1.5 transition-colors hover:bg-neutral-800/55"
             >
-              <span className="text-neutral-300">{numPrice.toFixed(2)}</span>
-              <span className="text-neutral-400">{numQty.toFixed(4)}</span>
-              <span className="text-neutral-600">{time}</span>
+              <span className="text-neutral-200">{numPrice.toFixed(2)}</span>
+              <span className="text-right text-neutral-400">{numQty.toFixed(4)}</span>
+              <span className="text-right text-neutral-600">{time}</span>
             </div>
           );
         })}

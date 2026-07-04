@@ -18,12 +18,12 @@ export default function OrderBook({ symbol }: { symbol: string }) {
   );
 
   if (!symbol) {
-    return <div className="text-neutral-500 text-sm">Select an instrument</div>;
+    return <div className="empty-state px-4 text-sm">Select an instrument to view live depth.</div>;
   }
 
-  if (error) return <div className="text-red-400 text-sm">Failed to load</div>;
-  if (!data) return <div className="text-neutral-500 text-sm">Loading book...</div>;
-  if (!Array.isArray(data)) return <div className="text-red-400 text-sm">Invalid data</div>;
+  if (error) return <div className="text-sm text-red-300">Failed to load</div>;
+  if (!data) return <div className="empty-state px-4 text-sm">Loading book...</div>;
+  if (!Array.isArray(data)) return <div className="text-sm text-red-300">Invalid data</div>;
 
   const asks = data
     .filter((l) => l.side === "sell")
@@ -44,12 +44,12 @@ export default function OrderBook({ symbol }: { symbol: string }) {
 
   return (
     <div className="font-mono text-xs">
-      <div className="flex justify-between text-neutral-500 mb-1 px-1">
+      <div className="grid grid-cols-3 px-2 pb-2 text-[0.68rem] uppercase tracking-wider text-neutral-600">
         <span>Price</span>
-        <span>Qty</span>
+        <span className="text-right">Qty</span>
+        <span className="text-right">Orders</span>
       </div>
 
-      {/* Asks (sell side) - reverse so best is at bottom */}
       <div className="space-y-px">
         {asks
           .slice()
@@ -57,21 +57,21 @@ export default function OrderBook({ symbol }: { symbol: string }) {
           .map((level, i) => (
             <div
               key={`ask-${level.price}-${i}`}
-              className="flex justify-between items-center px-1 py-0.5 relative"
+              className="relative grid grid-cols-3 items-center overflow-hidden rounded-md px-2 py-1.5"
             >
               <div
-                className="absolute inset-0 bg-red-500/10"
+                className="absolute inset-y-0 right-0 bg-rose-500/10"
                 style={{ width: `${(level.qty / maxQty) * 100}%` }}
               />
-              <span className="relative z-10 text-red-400">{level.price}</span>
-              <span className="relative z-10 text-red-300">{level.qty}</span>
+              <span className="relative z-10 text-rose-300">{level.price.toFixed(2)}</span>
+              <span className="relative z-10 text-right text-rose-100/80">{level.qty.toFixed(4)}</span>
+              <span className="relative z-10 text-right text-neutral-600">{level.order_count}</span>
             </div>
           ))}
       </div>
 
-      {/* Spread */}
-      <div className="flex justify-between items-center py-1.5 px-1 border-y border-neutral-800 my-1">
-        <span className="text-neutral-300 font-semibold text-sm">
+      <div className="my-2 flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-950/70 px-3 py-2">
+        <span className="text-sm font-semibold text-neutral-100">
           {bestBid || "—"} / {bestAsk || "—"}
         </span>
         <span className="text-neutral-500">
@@ -79,19 +79,19 @@ export default function OrderBook({ symbol }: { symbol: string }) {
         </span>
       </div>
 
-      {/* Bids (buy side) */}
       <div className="space-y-px">
         {bids.map((level, i) => (
           <div
             key={`bid-${level.price}-${i}`}
-            className="flex justify-between items-center px-1 py-0.5 relative"
+            className="relative grid grid-cols-3 items-center overflow-hidden rounded-md px-2 py-1.5"
           >
             <div
-              className="absolute inset-0 bg-green-500/10"
+              className="absolute inset-y-0 right-0 bg-emerald-500/10"
               style={{ width: `${(level.qty / maxQty) * 100}%` }}
             />
-            <span className="relative z-10 text-green-400">{level.price}</span>
-            <span className="relative z-10 text-green-300">{level.qty}</span>
+            <span className="relative z-10 text-emerald-300">{level.price.toFixed(2)}</span>
+            <span className="relative z-10 text-right text-emerald-100/80">{level.qty.toFixed(4)}</span>
+            <span className="relative z-10 text-right text-neutral-600">{level.order_count}</span>
           </div>
         ))}
       </div>

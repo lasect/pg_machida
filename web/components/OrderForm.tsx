@@ -8,20 +8,75 @@ type Props = {
   onOrderPlaced: () => void;
 };
 
+type OrderType = "limit" | "market" | "ioc" | "fok";
+
+type OrderPayload = {
+  instrument: string;
+  side: "buy" | "sell";
+  orderType: OrderType;
+  qty: number;
+  participant: string;
+  price?: number;
+};
+
+const MAX_PRICE = 1_000_000;
+const MAX_QTY = 1_000_000;
+const MAX_DECIMAL_PLACES = 2;
+const DECIMAL_INPUT_PATTERN = "[0-9]*[.]?[0-9]{0,2}";
+const ORDER_TYPES: Array<{ value: OrderType; label: string }> = [
+  { value: "limit", label: "Limit" },
+  { value: "market", label: "Market" },
+  { value: "ioc", label: "IOC" },
+  { value: "fok", label: "FOK" },
+];
+
+function cleanDecimalInput(value: string, max: number) {
+  const normalized = value.replace(/[^0-9.]/g, "");
+  const [whole = "", ...rest] = normalized.split(".");
+  const decimal = rest.join("").slice(0, MAX_DECIMAL_PLACES);
+  const cleaned = rest.length > 0 ? `${whole}.${decimal}` : whole;
+
+  if (Number(cleaned) > max) return max.toString();
+  return cleaned;
+}
+
+function getAmountError(label: string, value: string, max: number) {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount) || amount <= 0) return `${label} must be greater than 0`;
+  if (amount > max) return `${label} cannot exceed ${max.toLocaleString()}`;
+  return null;
+}
+
 export default function OrderForm({ symbol, participant, onOrderPlaced }: Props) {
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [orderType, setOrderType] = useState<"limit" | "market">("limit");
+  const [orderType, setOrderType] = useState<OrderType>("limit");
   const [price, setPrice] = useState("");
   const [qty, setQty] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const requiresPrice = orderType !== "market";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const qtyError = getAmountError("Quantity", qty, MAX_QTY);
+    const priceError =
+      requiresPrice ? getAmountError("Price", price, MAX_PRICE) : null;
+
+    if (!participant) {
+      setStatus("Trader ID is required");
+      return;
+    }
+
+    if (qtyError ?? priceError) {
+      setStatus(qtyError ?? priceError);
+      return;
+    }
+
     setSubmitting(true);
     setStatus(null);
 
-    const body: any = {
+    const body: OrderPayload = {
       instrument: symbol,
       side,
       orderType,
@@ -29,7 +84,7 @@ export default function OrderForm({ symbol, participant, onOrderPlaced }: Props)
       participant,
     };
 
-    if (orderType === "limit") {
+    if (requiresPrice) {
       body.price = parseFloat(price);
     }
 
@@ -59,15 +114,15 @@ export default function OrderForm({ symbol, participant, onOrderPlaced }: Props)
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="flex gap-2">
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-neutral-950/60 p-1">
         <button
           type="button"
           onClick={() => setSide("buy")}
-          className={`flex-1 py-1.5 text-sm font-medium rounded transition-colors ${
+          className={`rounded-xl py-2.5 text-sm font-semibold transition-all ${
             side === "buy"
-              ? "bg-green-600 text-white"
-              : "bg-neutral-800 text-neutral-400 border border-neutral-700 hover:border-green-700"
+              ? "bg-emerald-500 text-emerald-950 shadow-lg shadow-emerald-950/35"
+              : "text-neutral-500 hover:bg-neutral-900 hover:text-emerald-300"
           }`}
         >
           Buy
@@ -75,78 +130,72 @@ export default function OrderForm({ symbol, participant, onOrderPlaced }: Props)
         <button
           type="button"
           onClick={() => setSide("sell")}
-          className={`flex-1 py-1.5 text-sm font-medium rounded transition-colors ${
+          className={`rounded-xl py-2.5 text-sm font-semibold transition-all ${
             side === "sell"
-              ? "bg-red-600 text-white"
-              : "bg-neutral-800 text-neutral-400 border border-neutral-700 hover:border-red-700"
+              ? "bg-rose-500 text-rose-950 shadow-lg shadow-rose-950/35"
+              : "text-neutral-500 hover:bg-neutral-900 hover:text-rose-300"
           }`}
         >
           Sell
         </button>
       </div>
 
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => setOrderType("limit")}
-          className={`flex-1 py-1 text-xs rounded border transition-colors ${
-            orderType === "limit"
-              ? "bg-neutral-700 border-neutral-500 text-white"
-              : "bg-neutral-800 border-neutral-700 text-neutral-400"
-          }`}
-        >
-          Limit
-        </button>
-        <button
-          type="button"
-          onClick={() => setOrderType("market")}
-          className={`flex-1 py-1 text-xs rounded border transition-colors ${
-            orderType === "market"
-              ? "bg-neutral-700 border-neutral-500 text-white"
-              : "bg-neutral-800 border-neutral-700 text-neutral-400"
-          }`}
-        >
-          Market
-        </button>
+      <div className="grid grid-cols-4 gap-1.5">
+        {ORDER_TYPES.map((type) => (
+          <button
+            key={type.value}
+            type="button"
+            onClick={() => setOrderType(type.value)}
+            className={`min-w-0 rounded-xl border px-1.5 py-2 text-[11px] font-semibold uppercase tracking-normal transition-colors ${
+              orderType === type.value
+                ? "border-neutral-500 bg-neutral-700/45 text-neutral-100"
+                : "border-neutral-800 bg-neutral-900/60 text-neutral-500 hover:border-neutral-700"
+            }`}
+          >
+            {type.label}
+          </button>
+        ))}
       </div>
 
-      {orderType === "limit" && (
+      {requiresPrice && (
         <div>
-          <label className="text-xs text-neutral-400 block mb-0.5">Price</label>
+          <label className="mb-1.5 block text-xs font-medium text-neutral-400">Price</label>
           <input
-            type="number"
-            step="0.01"
-            min="0"
+            type="text"
+            inputMode="decimal"
+            pattern={DECIMAL_INPUT_PATTERN}
+            maxLength={10}
             value={price}
-            onChange={(e) => setPrice(e.target.value)}
+            onChange={(e) => setPrice(cleanDecimalInput(e.target.value, MAX_PRICE))}
             placeholder="0.00"
             required
-            className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-1.5 text-sm text-white font-mono placeholder:text-neutral-600 focus:outline-none focus:border-blue-500"
+            className="field w-full px-3 py-2.5 text-sm font-mono placeholder:text-neutral-700"
           />
         </div>
       )}
 
       <div>
-        <label className="text-xs text-neutral-400 block mb-0.5">Quantity</label>
+        <label className="mb-1.5 block text-xs font-medium text-neutral-400">Quantity</label>
         <input
-          type="number"
-          step="0.01"
-          min="0"
+          type="text"
+          inputMode="decimal"
+          pattern={DECIMAL_INPUT_PATTERN}
+          maxLength={10}
           value={qty}
-          onChange={(e) => setQty(e.target.value)}
+          onChange={(e) => setQty(cleanDecimalInput(e.target.value, MAX_QTY))}
           placeholder="0.00"
           required
-          className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-1.5 text-sm text-white font-mono placeholder:text-neutral-600 focus:outline-none focus:border-blue-500"
+          className="field w-full px-3 py-2.5 text-sm font-mono placeholder:text-neutral-700"
         />
       </div>
 
       <button
         type="submit"
         disabled={submitting}
-        className={`w-full py-2 text-sm font-medium rounded transition-colors ${
+        className={`w-full rounded-xl py-3 text-sm font-bold transition-all disabled:opacity-50 ${
           side === "buy"
-            ? "bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
-            : "bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+            ? "bg-emerald-400 text-emerald-950 shadow-lg shadow-emerald-950/40 hover:bg-emerald-300"
+            : "bg-rose-400 text-rose-950 shadow-lg shadow-rose-950/40 hover:bg-rose-300"
         }`}
       >
         {submitting
@@ -157,7 +206,7 @@ export default function OrderForm({ symbol, participant, onOrderPlaced }: Props)
       </button>
 
       {status && (
-        <div className="text-xs text-neutral-400 font-mono break-all">
+        <div className="rounded-xl border border-neutral-800 bg-neutral-950/60 px-3 py-2 font-mono text-xs leading-relaxed text-neutral-400 break-all">
           {status}
         </div>
       )}
