@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use pgrx::prelude::*;
@@ -6,6 +7,8 @@ use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
+use crate::engine::ClobEngine;
+use crate::persistence::{rebuild_book, InstrumentDef};
 use crate::types::*;
 
 ::pgrx::pg_module_magic!(name, version);
@@ -41,6 +44,159 @@ fn nullable_decimal_sql(value: Option<Decimal>) -> String {
     value
         .map(|d| format!("{}::numeric", d))
         .unwrap_or_else(|| "NULL".to_string())
+}
+
+fn parse_decimal(value: &str, column: &str) -> Decimal {
+    Decimal::from_str(value).unwrap_or_else(|e| pgrx::error!("invalid {column}: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// load_from_postgres — rebuild in-memory engine from persisted rows
+// ---------------------------------------------------------------------------
+
+#[pg_extern]
+fn clob_load_from_postgres() -> i64 {
+    let (instruments, orders) = Spi::connect(|client| {
+        let instruments_table = client
+            .select(
+                "SELECT id, symbol, tick_size::text, lot_size::text, max_ticks \
+                 FROM clob.instruments \
+                 WHERE status = 'active' \
+                 ORDER BY id",
+                None,
+                &[],
+            )
+            .unwrap_or_else(|e| pgrx::error!("failed to load instruments: {e}"));
+
+        let mut instruments = Vec::new();
+        for row in instruments_table {
+            let id = row
+                .get_by_name::<i64, _>("id")
+                .unwrap_or_else(|e| pgrx::error!("failed to read instrument id: {e}"))
+                .unwrap_or_else(|| pgrx::error!("instrument id is null"));
+            let symbol = row
+                .get_by_name::<String, _>("symbol")
+                .unwrap_or_else(|e| pgrx::error!("failed to read instrument symbol: {e}"))
+                .unwrap_or_else(|| pgrx::error!("instrument symbol is null"));
+            let tick_size = row
+                .get_by_name::<String, _>("tick_size")
+                .unwrap_or_else(|e| pgrx::error!("failed to read tick_size: {e}"))
+                .unwrap_or_else(|| pgrx::error!("tick_size is null"));
+            let lot_size = row
+                .get_by_name::<String, _>("lot_size")
+                .unwrap_or_else(|e| pgrx::error!("failed to read lot_size: {e}"))
+                .unwrap_or_else(|| pgrx::error!("lot_size is null"));
+            let max_ticks = row
+                .get_by_name::<i32, _>("max_ticks")
+                .unwrap_or_else(|e| pgrx::error!("failed to read max_ticks: {e}"))
+                .unwrap_or_else(|| pgrx::error!("max_ticks is null"));
+
+            instruments.push(InstrumentDef {
+                id: id as u64,
+                symbol,
+                tick_size: parse_decimal(&tick_size, "tick_size"),
+                lot_size: parse_decimal(&lot_size, "lot_size"),
+                max_ticks: max_ticks as usize,
+            });
+        }
+
+        let orders_table = client
+            .select(
+                "SELECT id::text, instrument_id, participant_id, side, order_type, \
+                        price::text, qty::text, remaining::text, status, stp_mode, \
+                        (extract(epoch from created_at) * 1000000000)::bigint AS ts \
+                 FROM clob.orders \
+                 WHERE status IN ('open', 'partially_filled') \
+                 ORDER BY created_at ASC, id ASC",
+                None,
+                &[],
+            )
+            .unwrap_or_else(|e| pgrx::error!("failed to load orders: {e}"));
+
+        let mut orders = Vec::new();
+        for row in orders_table {
+            let id = row
+                .get_by_name::<String, _>("id")
+                .unwrap_or_else(|e| pgrx::error!("failed to read order id: {e}"))
+                .unwrap_or_else(|| pgrx::error!("order id is null"));
+            let instrument_id = row
+                .get_by_name::<i64, _>("instrument_id")
+                .unwrap_or_else(|e| pgrx::error!("failed to read order instrument_id: {e}"))
+                .unwrap_or_else(|| pgrx::error!("order instrument_id is null"));
+            let participant_id = row
+                .get_by_name::<String, _>("participant_id")
+                .unwrap_or_else(|e| pgrx::error!("failed to read participant_id: {e}"))
+                .unwrap_or_else(|| pgrx::error!("participant_id is null"));
+            let side = row
+                .get_by_name::<String, _>("side")
+                .unwrap_or_else(|e| pgrx::error!("failed to read side: {e}"))
+                .unwrap_or_else(|| pgrx::error!("side is null"));
+            let order_type = row
+                .get_by_name::<String, _>("order_type")
+                .unwrap_or_else(|e| pgrx::error!("failed to read order_type: {e}"))
+                .unwrap_or_else(|| pgrx::error!("order_type is null"));
+            let price = row
+                .get_by_name::<String, _>("price")
+                .unwrap_or_else(|e| pgrx::error!("failed to read price: {e}"));
+            let qty = row
+                .get_by_name::<String, _>("qty")
+                .unwrap_or_else(|e| pgrx::error!("failed to read qty: {e}"))
+                .unwrap_or_else(|| pgrx::error!("qty is null"));
+            let remaining = row
+                .get_by_name::<String, _>("remaining")
+                .unwrap_or_else(|e| pgrx::error!("failed to read remaining: {e}"))
+                .unwrap_or_else(|| pgrx::error!("remaining is null"));
+            let status = row
+                .get_by_name::<String, _>("status")
+                .unwrap_or_else(|e| pgrx::error!("failed to read status: {e}"))
+                .unwrap_or_else(|| pgrx::error!("status is null"));
+            let stp_mode = row
+                .get_by_name::<String, _>("stp_mode")
+                .unwrap_or_else(|e| pgrx::error!("failed to read stp_mode: {e}"))
+                .unwrap_or_else(|| pgrx::error!("stp_mode is null"));
+            let ts = row
+                .get_by_name::<i64, _>("ts")
+                .unwrap_or_else(|e| pgrx::error!("failed to read order timestamp: {e}"))
+                .unwrap_or_else(|| pgrx::error!("order timestamp is null"));
+
+            let mut order = Order::new(
+                Uuid::parse_str(&id).unwrap_or_else(|e| pgrx::error!("invalid order id: {e}")),
+                instrument_id as u64,
+                participant_id,
+                side.as_str()
+                    .try_into()
+                    .unwrap_or_else(|e: String| pgrx::error!("{e}")),
+                order_type
+                    .as_str()
+                    .try_into()
+                    .unwrap_or_else(|e: String| pgrx::error!("{e}")),
+                price.as_deref().map(|p| parse_decimal(p, "price")),
+                parse_decimal(&qty, "qty"),
+                ts as u64,
+                stp_mode
+                    .as_str()
+                    .try_into()
+                    .unwrap_or_else(|e: String| pgrx::error!("{e}")),
+            );
+            order.remaining = parse_decimal(&remaining, "remaining");
+            order.status = status
+                .as_str()
+                .try_into()
+                .unwrap_or_else(|e: String| pgrx::error!("{e}"));
+            orders.push(order);
+        }
+
+        (instruments, orders)
+    });
+
+    let mut rebuilt = ClobEngine::new();
+    rebuild_book(&mut rebuilt, &instruments, &orders)
+        .unwrap_or_else(|e| pgrx::error!("failed to rebuild engine: {e}"));
+
+    let mut engine = state::lock_engine();
+    *engine = rebuilt;
+
+    orders.len() as i64
 }
 
 fn persist_order(

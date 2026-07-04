@@ -110,6 +110,19 @@ async function isEngineSeeded(): Promise<boolean> {
   }
 }
 
+async function hasPersistedInstruments(): Promise<boolean> {
+  const result = await db.execute(
+    sql`SELECT EXISTS (SELECT 1 FROM clob.instruments) AS exists`
+  );
+  const row = result[0] as Record<string, unknown> | undefined;
+
+  return row?.exists === true;
+}
+
+async function restoreEngineFromPostgres() {
+  await db.execute(sql`SELECT clob.load_from_postgres()`);
+}
+
 export async function ensureEngine() {
   if (engineSeeded && await isEngineSeeded()) return;
 
@@ -119,8 +132,15 @@ export async function ensureEngine() {
     return;
   }
 
-  await db.execute(sql`TRUNCATE clob.instruments CASCADE`);
-  await db.execute(sql`TRUNCATE clob.participants CASCADE`);
+  if (await hasPersistedInstruments()) {
+    await restoreEngineFromPostgres();
+    if (await isEngineSeeded()) {
+      engineSeeded = true;
+      return;
+    }
+
+    throw new Error("failed to restore engine from persisted state");
+  }
 
   for (const [sym, tick, lot, max] of INSTRUMENTS) {
     await db.execute(

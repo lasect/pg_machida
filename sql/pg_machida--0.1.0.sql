@@ -63,6 +63,12 @@ CREATE TABLE clob.book_snapshots (
     snapshot_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- SQL wrapper: load_from_postgres
+CREATE OR REPLACE FUNCTION clob.load_from_postgres()
+RETURNS BIGINT LANGUAGE sql AS $$
+    SELECT clob_load_from_postgres();
+$$;
+
 -- SQL wrapper: create_instrument
 CREATE OR REPLACE FUNCTION clob.create_instrument(
     symbol    TEXT,
